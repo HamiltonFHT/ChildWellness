@@ -96,14 +96,21 @@ df$Date.of.Latest.Weight = as.Date(df$Date.of.Latest.Weight, format="%b %d, %Y")
 df$Date.of.Latest.BMI = as.Date(df$Date.of.Latest.BMI, format="%b %d, %Y")
 df$Date.of.Latest.BMI.Percentile = as.Date(df$Date.of.Latest.BMI.Percentile, format="%b %d, %Y")
 df$Current.Date = as.Date(df$Current.Date, format="%b %d, %Y")
-
-# Convert BMI percentile to number
-df$Latest.BMI.Percentile <- as.numeric(as.character(df$Latest.BMI.Percentile))
-df$Latest.BMI <- as.numeric(as.character(df$Latest.BMI))
+df$Birth.Date = as.Date(df$Birth.Date, format="%b %d, %Y")
 
 # Get the current date, and one year ago
 current_date = df$Current.Date[1]
 one_year_ago = seq(current_date, length=2, by= "-12 months")[2]
+
+#Get current age in years 
+df$Calc.Age <- (current_date - df$Birth.Date)/365.25
+
+# Filter out patients below the age of 2 and above the age of 5
+df = subset(df, df$Calc.Age >= 2 & df$Calc.Age <= 5)
+
+# Convert BMI percentile to number
+df$Latest.BMI.Percentile <- as.numeric(as.character(df$Latest.BMI.Percentile))
+df$Latest.BMI <- as.numeric(as.character(df$Latest.BMI))
 
 #+
 #' Create Registries
