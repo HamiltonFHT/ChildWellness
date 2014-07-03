@@ -30,7 +30,7 @@
 #'  # of patients in each of the above 3 registries
 #'  # of up-to-date patients in each BMI category
 
-#Helper functions to write results to a file
+
 writeToCSV <- function(output_dir=getwd(), current_date=Sys.Date(), out_of_date_never_done=data.frame(), at_risk=data.frame(), outliers=data.frame()) {
   file_ending = paste(format(current_date, "_%d%b%Y"), ".txt", sep="")
   out_of_date_file = paste("CW_OutOfDate", file_ending, sep="");
@@ -102,11 +102,21 @@ df$Birth.Date = as.Date(df$Birth.Date, format="%b %d, %Y")
 current_date = df$Current.Date[1]
 one_year_ago = seq(current_date, length=2, by= "-12 months")[2]
 
+#' Outliers
+#' BMI < 11 or BMI > 40
+#' Date of measurement more recent than date of report
+#' Height < ?
+#' Weight < ?
+outliers = subset(df, df$Latest.BMI < 11 | df$Latest.BMI > 40 | df$Date.of.Latest.Height > current_date |
+                    df$Date.of.Latest.Weight > current_date | df$Date.of.Latest.BMI > current_date)
+
+#' Remove outliers from dataframe
+df = df[!df$Patient.. %in% outliers$Patient..,]
+
 #Get current age in years 
 df$Calc.Age <- (current_date - df$Birth.Date)/365.25
 
-#TODO: Add user input age ranges
-# Filter out patients below the age of 2 and above the age of 5
+#get age ranges and filter date by that
 minAge = as.numeric(winDialogString(message="What is the minimum age?", default="2"))
 
 if (minAge < 0) {
@@ -135,19 +145,6 @@ df$Latest.BMI <- as.numeric(as.character(df$Latest.BMI))
 #+
 #' Create Registries
 #' May not add up to all patients due to outliers and data entry issues.
-#' 
-#' Outliers
-#' BMI < 11 or BMI > 40
-#' Date of measurement more recent than date of report
-#' Height < ?
-#' Weight < ?
-outliers = subset(df, df$Latest.BMI < 11 | df$Latest.BMI > 40 | df$Date.of.Latest.Height > current_date |
-                    df$Date.of.Latest.Weight > current_date | df$Date.of.Latest.BMI > current_date)
-
-#' Remove outliers from dataframe
-df = df[!df$Patient.. %in% outliers$Patient..,]
-
-#' Create rest of registries
 never_done = subset(df, is.na(df$Date.of.Latest.BMI))
 up_to_date = subset(df, df$Date.of.Latest.Height > one_year_ago & df$Date.of.Latest.Weight > one_year_ago)
 out_of_date = subset(df, (df$Date.of.Latest.Height <= one_year_ago | 
@@ -244,19 +241,20 @@ boxplot(df$Date.of.Latest.Height, df$Date.of.Latest.Weight,
         names=c("Height", "Weight"),
         col=c("darkolivegreen3", "lightskyblue"), 
         main="Date of Latest Height and Weight")
-dev.off()
 
-#' Scatter plot -- used before the current boxplot
-#' png(filename=paste(output_dir, "HeightvsWeight.png", sep="/"));
-#' plot(df$Date.of.Latest.Weight, df$Date.of.Latest.Height, 
-#' xaxt="n", yaxt="n",
-#' main="Date of Latest Weight vs. Height",
-#' xlab="Date of Latest Weight", 
-#' ylab="Date of Latest Height")
-#' axis.Date(side = 2, x=HvW_df$Date.of.Latest.Height, format = "%Y")
-#' axis.Date(side = 1, x=HvW_df$Date.of.Latest.Weight, format = "%Y")
-#' abline(a=0, b=1, col="green")
-#' dev.off()
+# Previously used scatter plot
+# HvW_df = df[!df$Patient.. %in% outliers$Patient..,]
+# png(filename=paste(output_dir, "HeightvsWeight.png", sep="/"));
+# plot(HvW_df$Date.of.Latest.Weight, HvW_df$Date.of.Latest.Height, 
+#      xaxt="n", yaxt="n",
+#      main="Date of Latest Weight vs. Height",
+#      xlab="Date of Latest Weight", 
+#      ylab="Date of Latest Height")
+# axis.Date(side = 2, x=HvW_df$Date.of.Latest.Height, format = "%Y")
+# axis.Date(side = 1, x=HvW_df$Date.of.Latest.Weight, format = "%Y")
+# abline(a=0, b=1, col="green")
+# dev.off()
+
 
 #' Prepare to save registries. Check to make sure xlsx library is installed and install if necessary
 #' Write to a CSV text file otherwise.
