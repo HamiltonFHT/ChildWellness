@@ -102,6 +102,10 @@ df$Birth.Date = as.Date(df$Birth.Date, format="%b %d, %Y")
 current_date = df$Current.Date[1]
 one_year_ago = seq(current_date, length=2, by= "-12 months")[2]
 
+# Convert BMI percentile to number
+df$Latest.BMI.Percentile <- as.numeric(as.character(df$Latest.BMI.Percentile))
+df$Latest.BMI <- as.numeric(as.character(df$Latest.BMI))
+
 #' Outliers
 #' BMI < 11 or BMI > 40
 #' Date of measurement more recent than date of report
@@ -137,10 +141,6 @@ if (maxAge < 0) {
 }
 
 df = subset(df, df$Calc.Age >= minAge & df$Calc.Age <= maxAge)
-
-# Convert BMI percentile to number
-df$Latest.BMI.Percentile <- as.numeric(as.character(df$Latest.BMI.Percentile))
-df$Latest.BMI <- as.numeric(as.character(df$Latest.BMI))
 
 #+
 #' Create Registries
@@ -241,6 +241,7 @@ boxplot(df$Date.of.Latest.Height, df$Date.of.Latest.Weight,
         names=c("Height", "Weight"),
         col=c("darkolivegreen3", "lightskyblue"), 
         main="Date of Latest Height and Weight")
+dev.off()
 
 # Previously used scatter plot
 # HvW_df = df[!df$Patient.. %in% outliers$Patient..,]
