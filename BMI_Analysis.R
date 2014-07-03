@@ -30,7 +30,7 @@
 #'  # of patients in each of the above 3 registries
 #'  # of up-to-date patients in each BMI category
 
-
+#Helper functions to write results to a file
 writeToCSV <- function(output_dir=getwd(), current_date=Sys.Date(), out_of_date_never_done=data.frame(), at_risk=data.frame(), outliers=data.frame()) {
   file_ending = paste(format(current_date, "_%d%b%Y"), ".txt", sep="")
   out_of_date_file = paste("CW_OutOfDate", file_ending, sep="");
@@ -105,8 +105,28 @@ one_year_ago = seq(current_date, length=2, by= "-12 months")[2]
 #Get current age in years 
 df$Calc.Age <- (current_date - df$Birth.Date)/365.25
 
+#TODO: Add user input age ranges
 # Filter out patients below the age of 2 and above the age of 5
-df = subset(df, df$Calc.Age >= 2 & df$Calc.Age <= 5)
+minAge = as.numeric(winDialogString(message="What is the minimum age?", default="2"))
+
+if (minAge < 0) {
+  minAge = 2
+} else if (minAge > 100) {
+  minAge = 100
+} else if (is.na(minAge)) {
+  minAge = 2
+}
+
+maxAge = as.numeric(winDialogString(message="What is the maximum age?", default="5"))
+if (maxAge < 0) {
+  maxAge = 2
+} else if (maxAge > 100) {
+  maxAge = 100
+} else if (is.na(maxAge)) {
+  maxAge = 18
+}
+
+df = subset(df, df$Calc.Age >= minAge & df$Calc.Age <= maxAge)
 
 # Convert BMI percentile to number
 df$Latest.BMI.Percentile <- as.numeric(as.character(df$Latest.BMI.Percentile))
@@ -115,6 +135,19 @@ df$Latest.BMI <- as.numeric(as.character(df$Latest.BMI))
 #+
 #' Create Registries
 #' May not add up to all patients due to outliers and data entry issues.
+#' 
+#' Outliers
+#' BMI < 11 or BMI > 40
+#' Date of measurement more recent than date of report
+#' Height < ?
+#' Weight < ?
+outliers = subset(df, df$Latest.BMI < 11 | df$Latest.BMI > 40 | df$Date.of.Latest.Height > current_date |
+                    df$Date.of.Latest.Weight > current_date | df$Date.of.Latest.BMI > current_date)
+
+#' Remove outliers from dataframe
+df = df[!df$Patient.. %in% outliers$Patient..,]
+
+#' Create rest of registries
 never_done = subset(df, is.na(df$Date.of.Latest.BMI))
 up_to_date = subset(df, df$Date.of.Latest.Height > one_year_ago & df$Date.of.Latest.Weight > one_year_ago)
 out_of_date = subset(df, (df$Date.of.Latest.Height <= one_year_ago | 
@@ -125,14 +158,6 @@ top_85th_percentile = subset(df, df$Latest.BMI.Percentile > 85)
 out_of_date_never_done = merge(out_of_date, never_done)
 
 
-#' Outliers
-#' BMI < 11 or BMI > 40
-#' Date of measurement more recent than date of report
-#' Height < ?
-#' Weight < ?
-
-outliers = subset(df, df$Latest.BMI < 11 | df$Latest.BMI > 40 | df$Date.of.Latest.Height > current_date |
-                    df$Date.of.Latest.Weight > current_date | df$Date.of.Latest.BMI > current_date)
 
 # Get counts of number of patients in each registry
 num_never_done = nrow(never_done)
@@ -213,18 +238,25 @@ text(y=bmi_counts/2, x=bp_bmi,
      fontface="bold")
 dev.off();
 
-HvW_df = df[!df$Patient.. %in% outliers$Patient..,]
-png(filename=paste(output_dir, "HeightvsWeight.png", sep="/"));
-plot(HvW_df$Date.of.Latest.Weight, HvW_df$Date.of.Latest.Height, 
-     xaxt="n", yaxt="n",
-     main="Date of Latest Weight vs. Height",
-     xlab="Date of Latest Weight", 
-     ylab="Date of Latest Height")
-axis.Date(side = 2, x=HvW_df$Date.of.Latest.Height, format = "%Y")
-axis.Date(side = 1, x=HvW_df$Date.of.Latest.Weight, format = "%Y")
-abline(a=0, b=1, col="green")
+#Plot Date of Latest Height vs Date of Latest Weight
+png(filename=paste(output_dir, "HeightWeightBoxplot.png", sep="/"));
+boxplot(df$Date.of.Latest.Height, df$Date.of.Latest.Weight, 
+        names=c("Height", "Weight"),
+        col=c("darkolivegreen3", "lightskyblue"), 
+        main="Date of Latest Height and Weight")
 dev.off()
 
+#' Scatter plot -- used before the current boxplot
+#' png(filename=paste(output_dir, "HeightvsWeight.png", sep="/"));
+#' plot(df$Date.of.Latest.Weight, df$Date.of.Latest.Height, 
+#' xaxt="n", yaxt="n",
+#' main="Date of Latest Weight vs. Height",
+#' xlab="Date of Latest Weight", 
+#' ylab="Date of Latest Height")
+#' axis.Date(side = 2, x=HvW_df$Date.of.Latest.Height, format = "%Y")
+#' axis.Date(side = 1, x=HvW_df$Date.of.Latest.Weight, format = "%Y")
+#' abline(a=0, b=1, col="green")
+#' dev.off()
 
 #' Prepare to save registries. Check to make sure xlsx library is installed and install if necessary
 #' Write to a CSV text file otherwise.
