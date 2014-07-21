@@ -33,8 +33,8 @@
 
 
 #Write registries to three seperate CSV files
-writeToCSV <- function(output_dir=getwd(), current_date=Sys.Date(), out_of_date_never_done=data.frame(), at_risk=data.frame(), outliers=data.frame()) {
-  file_ending = paste(format(current_date, "_%d%b%Y"), ".txt", sep="")
+writeToCSV <- function(output_dir=getwd(), current_date=Sys.Date(), index, out_of_date_never_done=data.frame(), at_risk=data.frame(), outliers=data.frame()) {
+  file_ending = paste(format(current_date, "_%d%b%Y"), "_", index, ".txt", sep="")
   out_of_date_file = paste("CW_OutOfDate", file_ending, sep="");
   at_risk_file = paste("CW_AtRisk", file_ending, sep="");
   outliers_file = paste("CW_Outliers", file_ending, sep="");
@@ -51,9 +51,9 @@ writeToCSV <- function(output_dir=getwd(), current_date=Sys.Date(), out_of_date_
 }
 
 #Write registries to excel file (requires R xlsx package)
-writeToExcel <- function(output_dir=getwd(), current_date=Sys.Date(), out_of_date_never_done=data.frame(), at_risk=data.frame(), outliers=data.frame()) {
+writeToExcel <- function(output_dir=getwd(), current_date=Sys.Date(), index, out_of_date_never_done=data.frame(), at_risk=data.frame(), outliers=data.frame()) {
   excel_file = paste(output_dir, 
-                     paste("Child_Wellness_Registries_", format(current_date, format="%d%b%Y"), ".xlsx", sep=""), 
+                     paste("Child_Wellness_Registries_", format(current_date, format="%d%b%Y"), "_", index, ".xlsx", sep=""), 
                      sep="/");
   write.xlsx(out_of_date,
              file=excel_file, 
@@ -61,12 +61,12 @@ writeToExcel <- function(output_dir=getwd(), current_date=Sys.Date(), out_of_dat
              row.names=FALSE);
   write.xlsx(at_risk, 
              file=excel_file, 
-             sheetName="At Risk", 
+             sheetName="At Risk",
              row.names=FALSE,
              append=TRUE);
   write.xlsx(outliers, 
              file=excel_file, 
-             sheetName="Outliers", 
+             sheetName="Outliers",
              row.names=FALSE,
              append=TRUE);
 }
@@ -79,8 +79,7 @@ runReport <- function() {
   input_files = choose.files();
   
   if (length(input_files) == 0) {
-    print("No file selected");
-    return;
+    stop("No file selected");
   }
   
   #+ 
@@ -93,110 +92,130 @@ runReport <- function() {
     print(getwd());
   }
   
+
+  #get age ranges
+  minAge = as.numeric(winDialogString(message="What is the minimum age?", default="2"))
   
-  if (length(input_files) > 1) {
-    #TODO report on multiple files
+  if (minAge < 0) {
+    minAge = 2
+  } else if (minAge > 100) {
+    minAge = 100
+  } else if (is.na(minAge)) {
+    minAge = 2
+  }
+  
+  maxAge = as.numeric(winDialogString(message="What is the maximum age?", default="5"))
+  if (maxAge < 0) {
+    maxAge = 2
+  } else if (maxAge > 100) {
+    maxAge = 100
+  } else if (is.na(maxAge)) {
+    maxAge = 18
+  }
+   
+
+  master_data = list()
+  
+  for (i in 1:length(input_files)) {
     
-    print("In wrong statement");
+    if (length(input_files) == 1) {
+      current_file = input_files
+    } else {
+      current_file = input_files[i]
+    }
+        
+    #Read Report File
+    data = readReport(current_file)
     
-  } else {
+    #Handle for empty data (maybe age range doesn't make sense?)
+        
+    # Get the current date, and one year ago
+    current_date = data$Current.Date[1]
+
+    #Get current age in years 
+    data$Calc.Age <- (current_date - data$Birth.Date)/365.25
     
+    #Create Registries
+    reg = getRegistries(data, minAge, maxAge, current_date)
     
-    df = read.csv(input_files)
+    if (length(input_files > 1)) {
+      master_data[[i]] = c(reg, current_date)
+    }
+    
+    #Print Graphs
+    saveStatusGraph(output_dir, i,
+                    nrow(reg$never_done), nrow(reg$up_to_date), nrow(reg$out_of_date), nrow(reg$data),
+                    current_date)
+    
+    saveGrowthConcern(output_dir, i, reg, current_date)
+    
+    saveHeightWeightCharts(output_dir, i, reg$data)
+
+    #Print Registries
+    saveRegistries(output_dir, current_date, i, reg)
+  }
+  
+  #TODO - handle master_data
+  if (length(master_data) > 0) {
+    createMasterTable(master_data);
+  }
+  
+  winDialog(type="ok",
+            paste("Finished! You can find the files in ", output_dir, sep=""));
+}
+    
+readReport <- function(input_file) {
+    
+    data = read.csv(input_file)
     
     #+
     #' Convert to R dates
-    df$Date.of.Latest.Height = as.Date(df$Date.of.Latest.Height, format="%b %d, %Y")
-    df$Date.of.Latest.Weight = as.Date(df$Date.of.Latest.Weight, format="%b %d, %Y")
-    df$Date.of.Latest.BMI = as.Date(df$Date.of.Latest.BMI, format="%b %d, %Y")
-    df$Date.of.Latest.BMI.Percentile = as.Date(df$Date.of.Latest.BMI.Percentile, format="%b %d, %Y")
-    df$Current.Date = as.Date(df$Current.Date, format="%b %d, %Y")
-    df$Birth.Date = as.Date(df$Birth.Date, format="%b %d, %Y")
-    
-    # Get the current date, and one year ago
-    current_date = df$Current.Date[1]
-    one_year_ago = seq(current_date, length=2, by= "-12 months")[2]
-    
+    data$Date.of.Latest.Height = as.Date(data$Date.of.Latest.Height, format="%b %d, %Y")
+    data$Date.of.Latest.Weight = as.Date(data$Date.of.Latest.Weight, format="%b %d, %Y")
+    data$Date.of.Latest.BMI = as.Date(data$Date.of.Latest.BMI, format="%b %d, %Y")
+    data$Date.of.Latest.BMI.Percentile = as.Date(data$Date.of.Latest.BMI.Percentile, format="%b %d, %Y")
+    data$Current.Date = as.Date(data$Current.Date, format="%b %d, %Y")
+    data$Birth.Date = as.Date(data$Birth.Date, format="%b %d, %Y")
+        
     # Convert BMI percentile to number
-    df$Latest.BMI.Percentile <- as.numeric(as.character(df$Latest.BMI.Percentile))
-    df$Latest.BMI <- as.numeric(as.character(df$Latest.BMI))
+    data$Latest.BMI.Percentile <- as.numeric(as.character(data$Latest.BMI.Percentile))
+    data$Latest.BMI <- as.numeric(as.character(data$Latest.BMI))
+  
+    return(data)
+}
+
+getRegistries <- function(data, minAge, maxAge, current_date) {
+    #+
+    #' Create Registries
+    #' May not add up to all patients due to outliers and data entry issues.
+    
+    #Subset based on user specified age range
+    data = subset(data, data$Calc.Age >= minAge & data$Calc.Age <= maxAge);
+  
+    one_year_ago = seq(current_date, length=2, by= "-12 months")[2]
     
     #' Outliers
     #' BMI < 11 or BMI > 40
     #' Date of measurement more recent than date of report
     #' Height < ?
     #' Weight < ?
-    outliers = subset(df, df$Latest.BMI < 11 | df$Latest.BMI > 40 | df$Date.of.Latest.Height > current_date |
-                        df$Date.of.Latest.Weight > current_date | df$Date.of.Latest.BMI > current_date)
-    
+  
     #' Remove outliers from dataframe
-    df = df[!df$Patient.. %in% outliers$Patient..,]
+    outliers = subset(data, data$Latest.BMI < 11 | data$Latest.BMI > 40 | 
+                      data$Date.of.Latest.Height > current_date |
+                      data$Date.of.Latest.Weight > current_date | 
+                      data$Date.of.Latest.BMI > current_date)
+
+    data = data[!data$Patient.. %in% outliers$Patient..,]
+        
+    out_of_date = subset(data, (data$Date.of.Latest.Height <= one_year_ago | 
+                                  data$Date.of.Latest.Weight <= one_year_ago) &
+                             !is.na(data$Date.of.Latest.BMI))
     
-    #Get current age in years 
-    df$Calc.Age <- (current_date - df$Birth.Date)/365.25
+    never_done = subset(data, is.na(data$Date.of.Latest.BMI))
     
-    #get age ranges and filter date by that
-    minAge = as.numeric(winDialogString(message="What is the minimum age?", default="2"))
-    
-    if (minAge < 0) {
-      minAge = 2
-    } else if (minAge > 100) {
-      minAge = 100
-    } else if (is.na(minAge)) {
-      minAge = 2
-    }
-    
-    maxAge = as.numeric(winDialogString(message="What is the maximum age?", default="5"))
-    if (maxAge < 0) {
-      maxAge = 2
-    } else if (maxAge > 100) {
-      maxAge = 100
-    } else if (is.na(maxAge)) {
-      maxAge = 18
-    }
-    
-    df = subset(df, df$Calc.Age >= minAge & df$Calc.Age <= maxAge)
-    
-    #+
-    #' Create Registries
-    #' May not add up to all patients due to outliers and data entry issues.
-    never_done = subset(df, is.na(df$Date.of.Latest.BMI))
-    up_to_date = subset(df, df$Date.of.Latest.Height > one_year_ago & df$Date.of.Latest.Weight > one_year_ago)
-    out_of_date = subset(df, (df$Date.of.Latest.Height <= one_year_ago | 
-                                df$Date.of.Latest.Weight <= one_year_ago) &
-                           !is.na(df$Date.of.Latest.BMI))
-    top_85th_percentile = subset(df, df$Latest.BMI.Percentile > 85)
-    
-    out_of_date_never_done = merge(out_of_date, never_done)
-    
-    
-    
-    # Get counts of number of patients in each registry
-    num_never_done = nrow(never_done)
-    num_up_to_date = nrow(up_to_date)
-    num_out_of_date = nrow(out_of_date)
-    num_total = nrow(df)
-    
-    status_counts = c(num_total, num_up_to_date, num_out_of_date, num_never_done)
-    status_labels = c("Total", "Up to Date", "Out of Date", "Never Done")
-    status_colours = c("mediumpurple2", "darkolivegreen3", "orangered3", "dodgerblue3")
-    
-    #+
-    #' Plot number of patients in each of the registries
-    png(filename=paste(output_dir, "BMI_Status.png", sep="/"))
-    # Make left margin larger for legend text
-    par(mar = c(5,8,4,2) + 0.1);
-    # Horizontal bar chart
-    bp_status <- barplot(status_counts, col=status_colours, horiz=TRUE,
-                         legend.text=status_labels,
-                         xlab="Number of patients", 
-                         main=paste("Total Peds 2 to 5 years (n=",num_total,") \nas of ",
-                                    format(current_date, "%b %d, %Y"), sep=""));
-    # Add axis labels
-    axis(2, at = bp_status, labels=status_labels, las=1);
-    text(x=status_counts/2, y=bp_status,
-         labels=as.character(status_counts), xpd=TRUE)
-    dev.off();
+    up_to_date = subset(data, data$Date.of.Latest.Height > one_year_ago &
+                            data$Date.of.Latest.Weight > one_year_ago)
     
     #+ Get BMI status of up to date patients
     severely_wasted = subset(up_to_date, 
@@ -223,59 +242,118 @@ runReport <- function() {
                     overweight, 
                     obese)
     
-    # Store results in vectors
-    bmi_labels = c("Severely Wasted", "Wasted", "Normal", "Risk of Overweight", "Overweight", "Obese");
-    bmi_counts <- c(nrow(severely_wasted), nrow(wasted), nrow(normal), nrow(risk_of_overweight), nrow(overweight), nrow(obese));
-    bmi_colours = c("dodgerblue3", "orangered3", "darkolivegreen3", "mediumpurple2", "mediumturquoise", "orange", "lightskyblue");
     
-    png(filename=paste(output_dir, "BMI_Count.png", sep="/"));
-    # Make left margin larger for legend text
-    par(mar = c(5,4,6,2) + 0.1);
-    # Plot BMI status
-    bp_bmi <- barplot(bmi_counts, 
-                      main=paste("Total Peds 2 to 5 years with up to date BMI ",
-                                 "(n=",num_up_to_date,"/", num_total, ") \nas of ",
-                                 format(current_date, "%b %d, %Y"), sep=""), 
-                      ylab="Number of patients", 
-                      col=bmi_colours,
-                      legend.text=bmi_labels,
-                      las=2);
-    text(bp_bmi, 
-         par("usr")[3], 
-         labels=bmi_labels, 
-         srt=40, xpd=TRUE, adj=c(1.1, 1.1), cex=0.9);
-    text(y=bmi_counts/2, x=bp_bmi, 
-         labels=as.character(bmi_counts), xpd=TRUE, 
-         fontface="bold")
-    dev.off();
-    
-    #Plot Date of Latest Height vs Date of Latest Weight
-    png(filename=paste(output_dir, "HeightWeightBoxplot.png", sep="/"));
-    boxplot(df$Date.of.Latest.Height, df$Date.of.Latest.Weight, 
-            names=c("Height", "Weight"),
-            col=c("darkolivegreen3", "lightskyblue"), 
-            main="Date of Latest Height and Weight")
-    dev.off()
-    
-    # Previously used scatter plot
-    # HvW_df = df[!df$Patient.. %in% outliers$Patient..,]
-    # png(filename=paste(output_dir, "HeightvsWeight.png", sep="/"));
-    # plot(HvW_df$Date.of.Latest.Weight, HvW_df$Date.of.Latest.Height, 
-    #      xaxt="n", yaxt="n",
-    #      main="Date of Latest Weight vs. Height",
-    #      xlab="Date of Latest Weight", 
-    #      ylab="Date of Latest Height")
-    # axis.Date(side = 2, x=HvW_df$Date.of.Latest.Height, format = "%Y")
-    # axis.Date(side = 1, x=HvW_df$Date.of.Latest.Weight, format = "%Y")
-    # abline(a=0, b=1, col="green")
-    # dev.off()
-    
-    
+    registries <- list("never_done" = never_done,
+                       "out_of_date" = out_of_date,
+                       "up_to_date" = up_to_date,
+                       "out_of_date_never_done" = merge(out_of_date, never_done),
+                       "severely_wasted" = severely_wasted,
+                       "wasted" = wasted,
+                       "normal" = normal,
+                       "risk_of_overweight" = risk_of_overweight,
+                       "overweight" = overweight,
+                       "obese" = obese,
+                       "at_risk" = at_risk,
+                       "outliers" = outliers,
+                       "data" = data)
+
+    return(registries)
+}
+
+saveStatusGraph <- function(output_dir, index, 
+                            num_never_done, num_up_to_date, num_out_of_date, num_total, 
+                            current_date) {
+  # Get counts of number of patients in each registry
+
+  status_counts = c(num_total, num_up_to_date, num_out_of_date, num_never_done)
+  status_labels = c("Total", "Up to Date", "Out of Date", "Never Done")
+  status_colours = c("mediumpurple2", "darkolivegreen3", "orangered3", "dodgerblue3")
+  
+  filename = paste("BMI_Status", index, "png", sep=".")
+  png(filename=paste(output_dir, filename, sep="/"))
+  # Make left margin larger for legend text
+  par(mar = c(5,8,4,2) + 0.1);
+  # Horizontal bar chart
+  bp_status <- barplot(status_counts, col=status_colours, horiz=TRUE,
+                       legend.text=status_labels,
+                       xlab="Number of patients", 
+                       main=paste("Total Peds 2 to 5 years (n=",num_total,") \nas of ",
+                                  format(current_date, "%b %d, %Y"), sep=""));
+  # Add axis labels
+  axis(2, at = bp_status, labels=status_labels, las=1);
+  text(x=status_counts/2, y=bp_status,
+       labels=as.character(status_counts), xpd=TRUE)
+  dev.off();
+}
+
+saveGrowthConcern <- function(output_dir, index, reg, current_date) {
+
+  # Store results in vectors
+  bmi_labels = c("Severely Wasted", "Wasted", "Normal", "Risk of Overweight", "Overweight", "Obese");
+  bmi_counts <- c(nrow(reg$severely_wasted), 
+                  nrow(reg$wasted), nrow(reg$normal), nrow(reg$risk_of_overweight), nrow(reg$overweight), nrow(reg$obese));
+  bmi_colours = c("dodgerblue3", "orangered3", "darkolivegreen3", "mediumpurple2", "mediumturquoise", "orange", "lightskyblue");
+  
+  filename=paste("BMI_Count", index, "png", sep=".")
+  png(filename=paste(output_dir, filename, sep="/"));
+  
+  # Make left margin larger for legend text
+  par(mar = c(5,4,6,2) + 0.1);
+  # Plot BMI status
+  bp_bmi <- barplot(bmi_counts, 
+                    main=paste("Total Peds 2 to 5 years with up to date BMI ",
+                               "(n=",nrow(reg$up_to_date),"/", nrow(reg$data), ") \nas of ",
+                               format(current_date, "%b %d, %Y"), sep=""), 
+                    ylab="Number of patients", 
+                    col=bmi_colours,
+                    legend.text=bmi_labels,
+                    las=2);
+  text(bp_bmi, 
+       par("usr")[3], 
+       labels=bmi_labels, 
+       srt=40, xpd=TRUE, adj=c(1.1, 1.1), cex=0.9);
+  text(y=bmi_counts/2, x=bp_bmi, 
+       labels=as.character(bmi_counts), xpd=TRUE, 
+       fontface="bold")
+  dev.off();
+}
+
+saveHeightWeightCharts <- function(output_dir, index, data) {
+  #Plot Date of Latest Height vs Date of Latest Weight
+  
+  filename = paste("HeightWeightBoxplot", index, "png", sep=".")
+  png(filename=paste(output_dir, filename, sep="/"));
+  
+  boxplot(data$Date.of.Latest.Height, data$Date.of.Latest.Weight, 
+          names=c("Height", "Weight"),
+          col=c("darkolivegreen3", "lightskyblue"), 
+          main="Date of Latest Height and Weight")
+  
+  dev.off()
+  
+  # Previously used scatter plot
+  
+  # HvW_data = data[!data$Patient.. %in% outliers$Patient..,]
+  # png(filename=paste(output_dir, "HeightvsWeight.png", sep="/"));
+  # plot(HvW_data$Date.of.Latest.Weight, HvW_data$Date.of.Latest.Height, 
+  #      xaxt="n", yaxt="n",
+  #      main="Date of Latest Weight vs. Height",
+  #      xlab="Date of Latest Weight", 
+  #      ylab="Date of Latest Height")
+  # axis.Date(side = 2, x=HvW_data$Date.of.Latest.Height, format = "%Y")
+  # axis.Date(side = 1, x=HvW_data$Date.of.Latest.Weight, format = "%Y")
+  # abline(a=0, b=1, col="green")
+  # dev.off()
+  
+}
+
+saveRegistries <- function(output_dir, current_date, index, reg) {
+      
     #' Prepare to save registries. Check to make sure xlsx library is installed and install if necessary
     #' Write to a CSV text file otherwise.
     if ("xlsx" %in% rownames(installed.packages())) {
       require(xlsx)
-      writeToExcel(output_dir, current_date, out_of_date_never_done, at_risk, outliers)
+      writeToExcel(output_dir, current_date, index, reg$out_of_date_never_done, reg$at_risk, reg$outliers)
     } else {
       
       response = winDialog(type="yesno", 
@@ -286,23 +364,27 @@ runReport <- function() {
         install.packages("xlsx")
         
         if ("xlsx" %in% rownames(installed.packages())) {
-          writeToExcel(output_dir, current_date, out_of_date_never_done, at_risk, outliers)
+          writeToExcel(output_dir, current_date, index, reg$out_of_date_never_done, reg$at_risk, reg$outliers)
         } else {
           winDialog(type="ok", 
                     "Something went wrong installing excel libraries ('xlsx'). Writing to text files.");
-          writeToCSV(output_dir, current_date, out_of_date_never_done, at_risk, outliers)
+          writeToCSV(output_dir, current_date, index, reg$out_of_date_never_done, reg$at_risk, reg$outliers)
         }
       }
       else {
-        writeToCSV(output_dir, current_date, out_of_date_never_done, at_risk, outliers)
+        writeToCSV(output_dir, current_date, index, reg$out_of_date_never_done, reg$at_risk, reg$outliers)
       }
-    }
   }
-    
-  winDialog(type="ok",
-            paste("Finished! You can find the files in ", output_dir, sep=""));
 }
 
+#TODO - fill this in
+createMasterTable <- function(master_data) {
+  for (i in length(master_data)) {
+    
+  }
+  
+  
+}
 #+
 #' Run Application
 runReport()
