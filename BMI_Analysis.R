@@ -55,7 +55,7 @@ writeToExcel <- function(output_dir=getwd(), current_date=Sys.Date(), index, out
   excel_file = paste(output_dir, 
                      paste("Child_Wellness_Registries_", format(current_date, format="%d%b%Y"), "_", index, ".xlsx", sep=""), 
                      sep="/");
-  write.xlsx(out_of_date,
+  write.xlsx(out_of_date_never_done,
              file=excel_file, 
              sheetName="Out Of Date", 
              row.names=FALSE);
@@ -246,7 +246,7 @@ getRegistries <- function(data, minAge, maxAge, current_date) {
     registries <- list("never_done" = never_done,
                        "out_of_date" = out_of_date,
                        "up_to_date" = up_to_date,
-                       "out_of_date_never_done" = merge(out_of_date, never_done),
+                       "out_of_date_never_done" = merge(out_of_date, never_done, all=TRUE),
                        "severely_wasted" = severely_wasted,
                        "wasted" = wasted,
                        "normal" = normal,
@@ -362,6 +362,7 @@ saveRegistries <- function(output_dir, current_date, index, reg) {
       if (response == "YES") {
         
         install.packages("xlsx")
+        require(xlsx)
         
         if ("xlsx" %in% rownames(installed.packages())) {
           writeToExcel(output_dir, current_date, index, reg$out_of_date_never_done, reg$at_risk, reg$outliers)
@@ -382,8 +383,6 @@ createMasterTable <- function(master_data) {
   for (i in length(master_data)) {
     
   }
-  
-  
 }
 #+
 #' Run Application
