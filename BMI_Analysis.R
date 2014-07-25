@@ -32,44 +32,7 @@
 #'  Boxplot for date of last weight and date of last height to see if they are being measured at same time.
 
 
-#Write registries to three seperate CSV files
-writeToCSV <- function(output_dir=getwd(), current_date=Sys.Date(), index, out_of_date_never_done=data.frame(), at_risk=data.frame(), outliers=data.frame()) {
-  file_ending = paste(format(current_date, "_%d%b%Y"), "_", index, ".txt", sep="")
-  out_of_date_file = paste("CW_OutOfDate", file_ending, sep="");
-  at_risk_file = paste("CW_AtRisk", file_ending, sep="");
-  outliers_file = paste("CW_Outliers", file_ending, sep="");
-  
-  write.csv(out_of_date_never_done,
-            file=paste(output_dir, out_of_date_file, sep="/"),
-            row.names=FALSE)
-  write.csv(at_risk[order(at_risk$Latest.BMI.Percentile, decrease=TRUE), ],
-            file=paste(output_dir, at_risk_file, sep="/"),
-            row.names=FALSE)
-  write.csv(outliers,
-            file=paste(output_dir, outliers_file, sep="/"),
-            row.names=FALSE)
-}
 
-#Write registries to excel file (requires R xlsx package)
-writeToExcel <- function(output_dir=getwd(), current_date=Sys.Date(), index, out_of_date_never_done=data.frame(), at_risk=data.frame(), outliers=data.frame()) {
-  excel_file = paste(output_dir, 
-                     paste("Child_Wellness_Registries_", format(current_date, format="%d%b%Y"), "_", index, ".xlsx", sep=""), 
-                     sep="/");
-  write.xlsx(out_of_date,
-             file=excel_file, 
-             sheetName="Out Of Date", 
-             row.names=FALSE);
-  write.xlsx(at_risk, 
-             file=excel_file, 
-             sheetName="At Risk",
-             row.names=FALSE,
-             append=TRUE);
-  write.xlsx(outliers, 
-             file=excel_file, 
-             sheetName="Outliers",
-             row.names=FALSE,
-             append=TRUE);
-}
 
 
 runReport <- function() {
@@ -81,10 +44,11 @@ runReport <- function() {
   if (length(input_files) == 0) {
     stop("No file selected");
   }
-  
+
   #+ 
   # Prompt user for folder to save results to 
-  output_dir = choose.dir(default=getwd(), caption="Select a directory to save files to");
+  output_dir = choose.dir(default=dirname(input_files[[1]]),caption="Select a directory to save files to");
+
   
   if (is.na(output_dir)) {
     output_dir = getwd();
@@ -115,6 +79,8 @@ runReport <- function() {
    
 
   master_data = list()
+  #master_count = list()
+  #master_change = list()
   
   for (i in 1:length(input_files)) {
     
@@ -123,6 +89,9 @@ runReport <- function() {
     } else {
       current_file = input_files[i]
     }
+    
+    # Get filename
+    filename = basename(sub("\\.txt","",current_file,fixed=FALSE))
         
     #Read Report File
     data = readReport(current_file)
@@ -138,26 +107,29 @@ runReport <- function() {
     #Create Registries
     reg = getRegistries(data, minAge, maxAge, current_date)
     
-    if (length(input_files > 1)) {
-      master_data[[i]] = c(reg, current_date)
+    if (length(input_files) > 1) {
+      total = nrow(reg$data)
+      utd = nrow(reg$up_to_date)
+      master_data[[i]] = list(current_date, total, utd, utd/total, nrow(reg$never_done),
+                            nrow(reg$out_of_date))
     }
     
     #Print Graphs
-    saveStatusGraph(output_dir, i,
+    saveStatusGraph(output_dir, filename,
                     nrow(reg$never_done), nrow(reg$up_to_date), nrow(reg$out_of_date), nrow(reg$data),
                     current_date)
     
-    saveGrowthConcern(output_dir, i, reg, current_date)
+    saveGrowthConcern(output_dir, filename, reg, current_date)
     
-    saveHeightWeightCharts(output_dir, i, reg$data)
+    saveHeightWeightCharts(output_dir, filename, reg$data)
 
     #Print Registries
-    saveRegistries(output_dir, current_date, i, reg)
+    saveRegistries(output_dir, current_date, filename, reg)
   }
   
   #TODO - handle master_data
   if (length(master_data) > 0) {
-    createMasterTable(master_data);
+    createMasterTable(output_dir, filename, master_data, minAge, maxAge);
   }
   
   winDialog(type="ok",
@@ -246,7 +218,7 @@ getRegistries <- function(data, minAge, maxAge, current_date) {
     registries <- list("never_done" = never_done,
                        "out_of_date" = out_of_date,
                        "up_to_date" = up_to_date,
-                       "out_of_date_never_done" = merge(out_of_date, never_done),
+                       "out_of_date_never_done" = merge(out_of_date, never_done, all=TRUE),
                        "severely_wasted" = severely_wasted,
                        "wasted" = wasted,
                        "normal" = normal,
@@ -260,7 +232,7 @@ getRegistries <- function(data, minAge, maxAge, current_date) {
     return(registries)
 }
 
-saveStatusGraph <- function(output_dir, index, 
+saveStatusGraph <- function(output_dir, filename, 
                             num_never_done, num_up_to_date, num_out_of_date, num_total, 
                             current_date) {
   # Get counts of number of patients in each registry
@@ -269,7 +241,8 @@ saveStatusGraph <- function(output_dir, index,
   status_labels = c("Total", "Up to Date", "Out of Date", "Never Done")
   status_colours = c("mediumpurple2", "darkolivegreen3", "orangered3", "dodgerblue3")
   
-  filename = paste("BMI_Status", index, "png", sep=".")
+  filename = paste("BMI_Status", filename, sep="-")
+  filename = paste(filename, "png", sep=".")
   png(filename=paste(output_dir, filename, sep="/"))
   # Make left margin larger for legend text
   par(mar = c(5,8,4,2) + 0.1);
@@ -279,14 +252,23 @@ saveStatusGraph <- function(output_dir, index,
                        xlab="Number of patients", 
                        main=paste("Total Peds 2 to 5 years (n=",num_total,") \nas of ",
                                   format(current_date, "%b %d, %Y"), sep=""));
+
+  # Make an adjusted vector for bar count positioning
+  adjusted_count = c()
+  index = 1
+  for(i in status_counts) {if (i < 25) {adjusted_count[index]=i*2+40} 
+                        else {adjusted_count[index]=i}
+                        index = index+1
+  }
+  
   # Add axis labels
   axis(2, at = bp_status, labels=status_labels, las=1);
-  text(x=status_counts/2, y=bp_status,
+  text(x=adjusted_count/2, y=bp_status,
        labels=as.character(status_counts), xpd=TRUE)
   dev.off();
 }
 
-saveGrowthConcern <- function(output_dir, index, reg, current_date) {
+saveGrowthConcern <- function(output_dir, filename, reg, current_date) {
 
   # Store results in vectors
   bmi_labels = c("Severely Wasted", "Wasted", "Normal", "Risk of Overweight", "Overweight", "Obese");
@@ -294,7 +276,8 @@ saveGrowthConcern <- function(output_dir, index, reg, current_date) {
                   nrow(reg$wasted), nrow(reg$normal), nrow(reg$risk_of_overweight), nrow(reg$overweight), nrow(reg$obese));
   bmi_colours = c("dodgerblue3", "orangered3", "darkolivegreen3", "mediumpurple2", "mediumturquoise", "orange", "lightskyblue");
   
-  filename=paste("BMI_Count", index, "png", sep=".")
+  filename=paste("BMI_Count", filename, sep="-")
+  filename=paste(filename, "png", sep=".")
   png(filename=paste(output_dir, filename, sep="/"));
   
   # Make left margin larger for legend text
@@ -312,16 +295,27 @@ saveGrowthConcern <- function(output_dir, index, reg, current_date) {
        par("usr")[3], 
        labels=bmi_labels, 
        srt=40, xpd=TRUE, adj=c(1.1, 1.1), cex=0.9);
-  text(y=bmi_counts/2, x=bp_bmi, 
+  
+  # Make an adjusted vector for bar count positioning
+  adjusted_count = c()
+  index = 1
+  for(i in bmi_counts) {if (i < 10) {adjusted_count[index]=i*2+10} 
+                        else {adjusted_count[index]=i}
+                        index = index+1
+  }
+  
+  
+  text(y=adjusted_count/2, x=bp_bmi, 
        labels=as.character(bmi_counts), xpd=TRUE, 
        fontface="bold")
   dev.off();
 }
 
-saveHeightWeightCharts <- function(output_dir, index, data) {
+saveHeightWeightCharts <- function(output_dir, filename, data) {
   #Plot Date of Latest Height vs Date of Latest Weight
   
-  filename = paste("HeightWeightBoxplot", index, "png", sep=".")
+  filename = paste("HeightWeightBoxplot", filename, sep="-")
+  filename = paste(filename, "png", sep=".")
   png(filename=paste(output_dir, filename, sep="/"));
   
   boxplot(data$Date.of.Latest.Height, data$Date.of.Latest.Weight, 
@@ -347,13 +341,13 @@ saveHeightWeightCharts <- function(output_dir, index, data) {
   
 }
 
-saveRegistries <- function(output_dir, current_date, index, reg) {
+saveRegistries <- function(output_dir, current_date, filename, reg) {
       
     #' Prepare to save registries. Check to make sure xlsx library is installed and install if necessary
     #' Write to a CSV text file otherwise.
     if ("xlsx" %in% rownames(installed.packages())) {
       require(xlsx)
-      writeToExcel(output_dir, current_date, index, reg$out_of_date_never_done, reg$at_risk, reg$outliers)
+      writeToExcel(output_dir, filename, reg$out_of_date_never_done, reg$at_risk, reg$outliers)
     } else {
       
       response = winDialog(type="yesno", 
@@ -362,28 +356,104 @@ saveRegistries <- function(output_dir, current_date, index, reg) {
       if (response == "YES") {
         
         install.packages("xlsx")
+        require(xlsx)
         
         if ("xlsx" %in% rownames(installed.packages())) {
-          writeToExcel(output_dir, current_date, index, reg$out_of_date_never_done, reg$at_risk, reg$outliers)
+          writeToExcel(output_dir, current_date, filename, reg$out_of_date_never_done, reg$at_risk, reg$outliers)
         } else {
           winDialog(type="ok", 
                     "Something went wrong installing excel libraries ('xlsx'). Writing to text files.");
-          writeToCSV(output_dir, current_date, index, reg$out_of_date_never_done, reg$at_risk, reg$outliers)
+          writeToCSV(output_dir, current_date, filename, reg$out_of_date_never_done, reg$at_risk, reg$outliers)
         }
       }
       else {
-        writeToCSV(output_dir, current_date, index, reg$out_of_date_never_done, reg$at_risk, reg$outliers)
+        writeToCSV(output_dir, current_date, filename, reg$out_of_date_never_done, reg$at_risk, reg$outliers)
       }
   }
 }
 
 #TODO - fill this in
-createMasterTable <- function(master_data) {
-  for (i in length(master_data)) {
-    
+createMasterTable <- function(output_dir, filename, master_data, minAge, maxAge) {
+  # Turn master_data into a data frame
+  df <- data.frame(do.call(rbind, lapply(master_data, unlist)))
+  # Give column names
+  age_string = sprintf("Total Peds %s yrs to %s yrs", minAge, maxAge)
+  colnames(df) <- c("Date of Data Capture", age_string, 
+                    sprintf("%s up to date BMI (12 months)", age_string), "Percentage",
+                    sprintf("%s w/o BMI (never done)", age_string),
+                    sprintf("%s w/ out-of-date BMI", age_string))
+  df$"Date of Data Capture" <- as.Date(df$"Date of Data Capture", origin="1970-01-01")
+
+  excel_file <- paste(output_dir, 
+                     sprintf("Child_Wellness_Master_Table_%s.xlsx", Sys.Date()), 
+                     sep="/");
+  outwb <- createWorkbook(type="xlsx")
+  sheet <- createSheet(outwb, sheetName = "Summary")
+  setColumnWidth(sheet, 1:6, 15)
+  csPerc <- CellStyle(outwb, dataFormat=DataFormat("0.00%"))
+  csWrap <- CellStyle(outwb, alignment=Alignment(h="ALIGN_CENTER",wrapText=T))
+  df.colPerc = list('4'=csPerc)
+  df.rowWrap = list('1'=csWrap,
+                    '2'=csWrap,
+                    '3'=csWrap,
+                    '4'=csWrap,
+                    '5'=csWrap,
+                    '6'=csWrap)
+  addDataFrame(df, sheet, colStyle=c(df.colPerc), row.names=F)
+  #cells <- createCell(createRow(sheet, 1:10), colIndex=1:10)
+  #cell <- cells[[1,3]]
+  row <- getRows(sheet, rowIndex=1)
+  cell <- getCells(row)
+  
+  for (i in 1:6){
+    setCellStyle(cell[[paste('1.',i, sep="")]], csWrap)
   }
   
+  saveWorkbook(outwb, excel_file)
   
+  #write.xlsx(df,file=excel_file, sheetName="Summary", row.names=FALSE);
+  
+  
+  
+}
+
+#Write registries to three seperate CSV files
+writeToCSV <- function(output_dir=getwd(), current_date=Sys.Date(), filename, out_of_date_never_done=data.frame(), at_risk=data.frame(), outliers=data.frame()) {
+  file_ending = paste(format(current_date, "_%d%b%Y"), "_", filename, ".txt", sep="")
+  out_of_date_file = paste("CW_OutOfDate", file_ending, sep="");
+  at_risk_file = paste("CW_AtRisk", file_ending, sep="");
+  outliers_file = paste("CW_Outliers", file_ending, sep="");
+  
+  write.csv(out_of_date_never_done,
+            file=paste(output_dir, out_of_date_file, sep="/"),
+            row.names=FALSE)
+  write.csv(at_risk[order(at_risk$Latest.BMI.Percentile, decrease=TRUE), ],
+            file=paste(output_dir, at_risk_file, sep="/"),
+            row.names=FALSE)
+  write.csv(outliers,
+            file=paste(output_dir, outliers_file, sep="/"),
+            row.names=FALSE)
+}
+
+#Write registries to excel file (requires R xlsx package)
+writeToExcel <- function(output_dir=getwd(), filename, out_of_date_never_done=data.frame(), at_risk=data.frame(), outliers=data.frame()) {
+  excel_file = paste(output_dir, 
+                     paste("Child_Wellness_Registries", "_", filename, ".xlsx", sep=""), 
+                     sep="/");
+  write.xlsx(out_of_date_never_done,
+             file=excel_file, 
+             sheetName="Out Of Date", 
+             row.names=FALSE);
+  write.xlsx(at_risk, 
+             file=excel_file, 
+             sheetName="At Risk",
+             row.names=FALSE,
+             append=TRUE);
+  write.xlsx(outliers, 
+             file=excel_file, 
+             sheetName="Outliers",
+             row.names=FALSE,
+             append=TRUE);
 }
 #+
 #' Run Application
