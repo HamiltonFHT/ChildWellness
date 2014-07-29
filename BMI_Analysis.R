@@ -78,8 +78,8 @@ runReport <- function() {
   }
    
 
-  master_data = list()
-  #master_count = list()
+  master_data = c()
+  master_count = c()
   #master_change = list()
   
   for (i in 1:length(input_files)) {
@@ -110,8 +110,8 @@ runReport <- function() {
     if (length(input_files) > 1) {
       total = nrow(reg$data)
       utd = nrow(reg$up_to_date)
-      master_data[[i]] = list(current_date, total, utd, utd/total, nrow(reg$never_done),
-                            nrow(reg$out_of_date))
+      master_data = rbind(master_data, c(current_date, total, utd, utd/total, nrow(reg$never_done),
+                            nrow(reg$out_of_date)))
     }
     
     #Print Graphs
@@ -119,7 +119,9 @@ runReport <- function() {
                     nrow(reg$never_done), nrow(reg$up_to_date), nrow(reg$out_of_date), nrow(reg$data),
                     current_date)
     
-    saveGrowthConcern(output_dir, filename, reg, current_date)
+    bmi_count <- saveGrowthConcern(output_dir, filename, reg, current_date)
+    bmi_count <- union(as.numeric(current_date), bmi_count)
+    master_count <- rbind(master_count, bmi_count)
     
     saveHeightWeightCharts(output_dir, filename, reg$data)
 
@@ -128,8 +130,8 @@ runReport <- function() {
   }
   
   #TODO - handle master_data
-  if (length(master_data) > 0) {
-    createMasterTable(output_dir, filename, master_data, minAge, maxAge);
+  if (length(input_files) > 1) {
+    createMasterTable(output_dir, filename, master_data[order(master_data[,1]),], master_count[order(master_count[,1]),], minAge, maxAge);
   }
   
   winDialog(type="ok",
@@ -276,6 +278,7 @@ saveGrowthConcern <- function(output_dir, filename, reg, current_date) {
                   nrow(reg$wasted), nrow(reg$normal), nrow(reg$risk_of_overweight), nrow(reg$overweight), nrow(reg$obese));
   bmi_colours = c("dodgerblue3", "orangered3", "darkolivegreen3", "mediumpurple2", "mediumturquoise", "orange", "lightskyblue");
   
+  
   filename=paste("BMI_Count", filename, sep="-")
   filename=paste(filename, "png", sep=".")
   png(filename=paste(output_dir, filename, sep="/"));
@@ -309,6 +312,7 @@ saveGrowthConcern <- function(output_dir, filename, reg, current_date) {
        labels=as.character(bmi_counts), xpd=TRUE, 
        fontface="bold")
   dev.off();
+  return(bmi_counts)
 }
 
 saveHeightWeightCharts <- function(output_dir, filename, data) {
@@ -372,48 +376,67 @@ saveRegistries <- function(output_dir, current_date, filename, reg) {
   }
 }
 
-#TODO - fill this in
-createMasterTable <- function(output_dir, filename, master_data, minAge, maxAge) {
-  # Turn master_data into a data frame
-  df <- data.frame(do.call(rbind, lapply(master_data, unlist)))
+
+createMasterTable <- function(output_dir, filename, master_data, master_count, minAge, maxAge) {
+  
+  # Turn data into a data frame
+  df.MD <- data.frame(master_data)
+  df.MC <- data.frame(master_count)
+  
   # Give column names
   age_string = sprintf("Total Peds %s yrs to %s yrs", minAge, maxAge)
-  colnames(df) <- c("Date of Data Capture", age_string, 
+  colnames(df.MD) <- c("Date of Data Capture", age_string, 
                     sprintf("%s up to date BMI (12 months)", age_string), "Percentage",
                     sprintf("%s w/o BMI (never done)", age_string),
                     sprintf("%s w/ out-of-date BMI", age_string))
-  df$"Date of Data Capture" <- as.Date(df$"Date of Data Capture", origin="1970-01-01")
-
+  df.MD$"Date of Data Capture" <- as.Date(df.MD$"Date of Data Capture", origin="1970-01-01")
+  
+  colnames(df.MC) <- c("Date of Data Capture", "Severely Wasted", "Wasted", "Normal", 
+                       "Risk of Overweight", "Overweight", "Obese")
+  df.MC$"Date of Data Capture" <- as.Date(df.MC$"Date of Data Capture", origin="1970-01-01")
+  
+  # Create workbook and title
   excel_file <- paste(output_dir, 
                      sprintf("Child_Wellness_Master_Table_%s.xlsx", Sys.Date()), 
                      sep="/");
   outwb <- createWorkbook(type="xlsx")
-  sheet <- createSheet(outwb, sheetName = "Summary")
-  setColumnWidth(sheet, 1:6, 15)
-  csPerc <- CellStyle(outwb, dataFormat=DataFormat("0.00%"))
-  csWrap <- CellStyle(outwb, alignment=Alignment(h="ALIGN_CENTER",wrapText=T))
-  df.colPerc = list('4'=csPerc)
-  df.rowWrap = list('1'=csWrap,
-                    '2'=csWrap,
-                    '3'=csWrap,
-                    '4'=csWrap,
-                    '5'=csWrap,
-                    '6'=csWrap)
-  addDataFrame(df, sheet, colStyle=c(df.colPerc), row.names=F)
-  #cells <- createCell(createRow(sheet, 1:10), colIndex=1:10)
-  #cell <- cells[[1,3]]
-  row <- getRows(sheet, rowIndex=1)
-  cell <- getCells(row)
   
+  # Create Summary Sheet
+  sheet.MD <- createSheet(outwb, sheetName="Summary")
+  setColumnWidth(sheet.MD, 1:6, 15)
+  csPerc <- CellStyle(outwb, dataFormat=DataFormat("0.00%"))
+  csWrap <- CellStyle(outwb, alignment=Alignment(wrapText=T))
+  df.MD.colPerc <- list('4'=csPerc)
+  addDataFrame(df.MD, sheet.MD, colStyle=c(df.MD.colPerc), row.names=F)
+  
+  # Word wrap the header rows
+  row <- getRows(sheet.MD, rowIndex=1)
+  cell <- getCells(row)
   for (i in 1:6){
     setCellStyle(cell[[paste('1.',i, sep="")]], csWrap)
   }
   
+  # Create count sheet
+  sheet.MC <- createSheet(outwb, sheetName="Count")
+  setColumnWidth(sheet.MC, 1:7, 12)
+  csCenter <- CellStyle(outwb, alignment=Alignment(h="ALIGN_CENTER"))
+  df.MC.colCenter <- list('2'=csCenter, '3'=csCenter, '4'=csCenter,
+                          '5'=csCenter, '6'=csCenter, '7'=csCenter)
+  addDataFrame(df.MC, sheet.MC, colStyle=c(df.MC.colCenter), row.names=F)
+  row <- getRows(sheet.MC, rowIndex=1)
+  cell <- getCells(row)
+  for (i in 1:7){
+    setCellStyle(cell[[sprintf('1.%d',i)]], csWrap)
+  }
+  
+  # Create Percent Change sheet
+
+  
+  # Create Up-to-date over time chart
+  
+  
+  # Save Workbook
   saveWorkbook(outwb, excel_file)
-  
-  #write.xlsx(df,file=excel_file, sheetName="Summary", row.names=FALSE);
-  
-  
   
 }
 
