@@ -80,7 +80,7 @@ runReport <- function() {
 
   master_data = c()
   master_count = c()
-  #master_change = list()
+
   
   for (i in 1:length(input_files)) {
     
@@ -131,7 +131,7 @@ runReport <- function() {
   
   #TODO - handle master_data
   if (length(input_files) > 1) {
-    createMasterTable(output_dir, filename, master_data[order(master_data[,1]),], master_count[order(master_count[,1]),], minAge, maxAge);
+    createMasterTable(output_dir, max(master_data[,1]), master_data[order(master_data[,1]),], master_count[order(master_count[,1]),], minAge, maxAge);
   }
   
   winDialog(type="ok",
@@ -377,14 +377,17 @@ saveRegistries <- function(output_dir, current_date, filename, reg) {
 }
 
 
-createMasterTable <- function(output_dir, filename, master_data, master_count, minAge, maxAge) {
+createMasterTable <- function(output_dir, lastDate, master_data, master_count, minAge, maxAge) {
   
   # Turn data into a data frame
   df.MD <- data.frame(master_data)
   df.MC <- data.frame(master_count)
   
+  # Turn lastDate into a Date
+  lastDate <- as.Date(lastDate, origin="1970-01-01")
+  
   # Give column names
-  age_string = sprintf("Total Peds %s yrs to %s yrs", minAge, maxAge)
+  age_string = sprintf("Total Peds %syrs to %syrs", minAge, maxAge)
   colnames(df.MD) <- c("Date of Data Capture", age_string, 
                     sprintf("%s up to date BMI (12 months)", age_string), "Percentage",
                     sprintf("%s w/o BMI (never done)", age_string),
@@ -397,7 +400,7 @@ createMasterTable <- function(output_dir, filename, master_data, master_count, m
   
   # Create workbook and title
   excel_file <- paste(output_dir, 
-                     sprintf("Child_Wellness_Master_Table_%s.xlsx", Sys.Date()), 
+                     sprintf("Child_Wellness_Master_Table_%s.xlsx", lastDate), 
                      sep="/");
   outwb <- createWorkbook(type="xlsx")
   
@@ -430,14 +433,43 @@ createMasterTable <- function(output_dir, filename, master_data, master_count, m
   }
   
   # Create Percent Change sheet
-
-  
-  # Create Up-to-date over time chart
-  
+  sheet.PC <- createSheet(outwb, sheetName="Percent Change")
+  setColumnWidth(sheet.PC, 1:6, 15)
+  df.PC.colPerc <- list('2'=csPerc, '3'=csPerc, '4'=csPerc,'5'=csPerc)
+  df.PC <- df.MD[,-4]
+  df.PC.final <- c()
+  for (i in 1:(length(df.PC[[1]])-1)) {
+    df.PC.final <- rbind(df.PC.final, cbind(df.PC[[1]][i+1],(df.PC[i+1,2:5]-df.PC[i,2:5])/df.PC[i,2:5]))
+  }
+  colnames(df.PC.final)[1]<-"Date of Data Capture" 
+  addDataFrame(df.PC.final, sheet.PC, colStyle=c(df.PC.colPerc), row.names=F)
+  row <- getRows(sheet.PC, rowIndex=1)
+  cell <- getCells(row)
+  for (i in 1:5){
+    setCellStyle(cell[[sprintf('1.%d',i)]], csWrap)
+  }
   
   # Save Workbook
   saveWorkbook(outwb, excel_file)
   
+  # Create Up-to-date over time chart
+  filename <- sprintf("Up-To-Date Over Time Chart (%syrs to %syrs) %s.png", minAge, maxAge, lastDate)
+  xrange <- range(df.MD$"Date of Data Capture")
+  yrange <- range(df.MD$"Percentage")
+  png(filename=paste(output_dir,filename,sep="/"), width=700, height=480)
+  par(mar=c(5.5, 5.5, 4.1, 2.1), mgp=c(4, 1, 0))
+  heading <- sprintf("Percent of Up-to-Date Over Time (%s years to %s years)", minAge, maxAge)
+  plot(df.MD$"Date of Data Capture", df.MD$"Percentage", main=heading, ylab=expression(bold(Percent~of~patients~with~up-to-date~BMI)),
+       xlab=expression(bold(Date)), pch=23, col="blue", bg="blue", yaxt="n", ylim=c(round(yrange[1],2)-0.01,round(yrange[2],2)+0.01),
+       xlim=c(xrange[1]-15,xrange[2]+15), xaxt="n", font=2)
+  text(df.MD$"Date of Data Capture", df.MD$"Percentage", sprintf("%.2f%%", df.MD$"Percentage"*100), pos=1, col="blue")
+  lines(df.MD$"Date of Data Capture", df.MD$"Percentage", type="o", col="blue", lwd=1.5)
+  axis(2,at=seq(round(yrange[1],2)-0.01, round(yrange[2],2)+0.01, 0.005),
+       labels=sprintf("%.2f%%", seq(round(yrange[1],2)-0.01, round(yrange[2],2)+0.01, 0.005)*100),
+       las=2, cex.axis=0.85)
+  axis.Date(1, df.MD$"Date of Data Capture", at=seq(xrange[1]-15,xrange[2]+15,by="months"), "%B-%d-%Y")
+  
+  dev.off()
 }
 
 #Write registries to three seperate CSV files
