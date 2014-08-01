@@ -33,6 +33,29 @@
 
 
 
+<<<<<<< HEAD
+=======
+#Write registries to excel file (requires R xlsx package)
+writeToExcel <- function(output_dir=getwd(), current_date=Sys.Date(), index, out_of_date_never_done=data.frame(), at_risk=data.frame(), outliers=data.frame()) {
+  excel_file = paste(output_dir, 
+                     paste("Child_Wellness_Registries_", format(current_date, format="%d%b%Y"), "_", index, ".xlsx", sep=""), 
+                     sep="/");
+  write.xlsx(out_of_date_never_done,
+             file=excel_file, 
+             sheetName="Out Of Date", 
+             row.names=FALSE);
+  write.xlsx(at_risk, 
+             file=excel_file, 
+             sheetName="At Risk",
+             row.names=FALSE,
+             append=TRUE);
+  write.xlsx(outliers, 
+             file=excel_file, 
+             sheetName="Outliers",
+             row.names=FALSE,
+             append=TRUE);
+}
+>>>>>>> origin/master
 
 
 runReport <- function() {
@@ -452,6 +475,7 @@ createMasterTable <- function(output_dir, lastDate, master_data, master_count, m
   for (i in 1:5){
     setCellStyle(cell[[sprintf('1.%d',i)]], csWrap)
   }
+<<<<<<< HEAD
   
   # Save Workbook
   saveWorkbook(outwb, excel_file)
@@ -513,6 +537,8 @@ writeToExcel <- function(output_dir=getwd(), filename, out_of_date_never_done=da
              sheetName="Outliers",
              row.names=FALSE,
              append=TRUE);
+=======
+>>>>>>> origin/master
 }
 #+
 #' Run Application
