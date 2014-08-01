@@ -294,14 +294,14 @@ saveGrowthConcern <- function(output_dir, filename, reg, current_date) {
                     col=bmi_colours,
                     legend.text=bmi_labels,
                     las=2,
-                    axes=F);
+                    axes=F, ylim=c(0,ceiling(max(bmi_counts)/50)*50));
   text(bp_bmi, 
        par("usr")[3], 
        labels=bmi_labels, 
        srt=40, xpd=TRUE, adj=c(1.1, 1.1), cex=0.9);
   
   # Plot y axis
-  axis(2, at=seq(0,ceiling(max(bmi_counts)/50)*50+50,50))
+  axis(2, at=seq(0,ceiling(max(bmi_counts)/50)*50,50))
   
   # Make an adjusted vector for bar count positioning
   adjusted_count = c()
