@@ -31,33 +31,6 @@
 #'  # of up-to-date patients in each BMI category
 #'  Boxplot for date of last weight and date of last height to see if they are being measured at same time.
 
-
-
-<<<<<<< HEAD
-=======
-#Write registries to excel file (requires R xlsx package)
-writeToExcel <- function(output_dir=getwd(), current_date=Sys.Date(), index, out_of_date_never_done=data.frame(), at_risk=data.frame(), outliers=data.frame()) {
-  excel_file = paste(output_dir, 
-                     paste("Child_Wellness_Registries_", format(current_date, format="%d%b%Y"), "_", index, ".xlsx", sep=""), 
-                     sep="/");
-  write.xlsx(out_of_date_never_done,
-             file=excel_file, 
-             sheetName="Out Of Date", 
-             row.names=FALSE);
-  write.xlsx(at_risk, 
-             file=excel_file, 
-             sheetName="At Risk",
-             row.names=FALSE,
-             append=TRUE);
-  write.xlsx(outliers, 
-             file=excel_file, 
-             sheetName="Outliers",
-             row.names=FALSE,
-             append=TRUE);
-}
->>>>>>> origin/master
-
-
 runReport <- function() {
   
   #+
@@ -132,14 +105,14 @@ runReport <- function() {
     
     if (length(input_files) > 1) {
       total = nrow(reg$data)
-      utd = nrow(reg$up_to_date)
-      master_data = rbind(master_data, c(current_date, total, utd, utd/total, nrow(reg$never_done),
-                            nrow(reg$out_of_date)))
+      utd = sum(reg$data[reg$up_to_date,])
+      master_data = rbind(master_data, c(current_date, total, utd, utd/total, reg$data[reg$never_done,],
+                            reg$data[reg$out_of_date],))
     }
     
     #Print Graphs
     saveStatusGraph(output_dir, filename,
-                    nrow(reg$never_done), nrow(reg$up_to_date), nrow(reg$out_of_date), nrow(reg$data),
+                    sum(reg$never_done), sum(reg$up_to_date),sum(reg$out_of_date), nrow(reg$data),
                     current_date)
     
     bmi_count <- saveGrowthConcern(output_dir, filename, reg, current_date)
@@ -189,6 +162,7 @@ getRegistries <- function(data, minAge, maxAge, current_date) {
     #Subset based on user specified age range
     data = subset(data, data$Calc.Age >= minAge & data$Calc.Age <= maxAge);
   
+    
     one_year_ago = seq(current_date, length=2, by= "-12 months")[2]
     
     #' Outliers
@@ -204,55 +178,47 @@ getRegistries <- function(data, minAge, maxAge, current_date) {
                       data$Date.of.Latest.BMI > current_date)
 
     data = data[!data$Patient.. %in% outliers$Patient..,]
+    
+    num_patients = nrow(data)
+    
+    out_of_date = never_done = out_of_date_never_done = up_to_date = rep(FALSE, num_patients);
+    
+    up_to_date[which(data$Date.of.Latest.Height > one_year_ago &
+                       data$Date.of.Latest.Weight > one_year_ago)] = TRUE
+    
+    out_of_date[which((data$Date.of.Latest.Height <= one_year_ago | 
+                             data$Date.of.Latest.Weight <= one_year_ago) &
+                             !is.na(data$Date.of.Latest.BMI), arr.ind=TRUE)] = TRUE
+    
+    never_done[which(is.na(data$Date.of.Latest.BMI))] = TRUE
+    
+    out_of_date_never_done[which(out_of_date | never_done)] = TRUE
         
-    out_of_date = subset(data, (data$Date.of.Latest.Height <= one_year_ago | 
-                                  data$Date.of.Latest.Weight <= one_year_ago) &
-                             !is.na(data$Date.of.Latest.BMI))
-    
-    never_done = subset(data, is.na(data$Date.of.Latest.BMI))
-    
-    up_to_date = subset(data, data$Date.of.Latest.Height > one_year_ago &
-                            data$Date.of.Latest.Weight > one_year_ago)
-    
     #+ Get BMI status of up to date patients
-    severely_wasted = subset(up_to_date, 
-                             up_to_date$Latest.BMI.Percentile<0.1)
-    wasted = subset(up_to_date, 
-                    up_to_date$Latest.BMI.Percentile>=0.1 &
-                      up_to_date$Latest.BMI.Percentile<3)
-    normal = subset(up_to_date, 
-                    up_to_date$Latest.BMI.Percentile>3 &
-                      up_to_date$Latest.BMI.Percentile<85)
-    risk_of_overweight = subset(up_to_date, 
-                                up_to_date$Latest.BMI.Percentile>=85 &
-                                  up_to_date$Latest.BMI.Percentile<97)
-    overweight = subset(up_to_date, 
-                        up_to_date$Latest.BMI.Percentile>=97 &
-                          up_to_date$Latest.BMI.Percentile<99.9)
-    obese = subset(up_to_date, 
-                   up_to_date$Latest.BMI.Percentile>=99.9)
+    severely_wasted = wasted = normal = risk_of_overweight = overweight = obese = rep(FALSE, num_patients);
+
+    severely_wasted[which(up_to_date & data$Latest.BMI.Percentile<0.1)] = TRUE
+    wasted[which(up_to_date & data$Latest.BMI.Percentile>=0.1 & data$Latest.BMI.Percentile<3)] = TRUE
+    normal[which(up_to_date & data$Latest.BMI.Percentile>=3 & data$Latest.BMI.Percentile<85)] = TRUE
+    risk_of_overweight[which(up_to_date & data$Latest.BMI.Percentile>=85 & data$Latest.BMI.Percentile<97)] = TRUE
+    overweight[which(up_to_date & data$Latest.BMI.Percentile>=97 & data$Latest.BMI.Percentile<99.9)] = TRUE
+    obese[which(up_to_date & data$Latest.BMI.Percentile>=99.9)] = TRUE
     
-    #At risk registry is everyone not in the normal weight category
-    at_risk = rbind(severely_wasted, 
-                    wasted, 
-                    risk_of_overweight, 
-                    overweight, 
-                    obese)
+    at_risk = (up_to_date & !normal)
     
-    
-    registries <- list("never_done" = never_done,
-                       "out_of_date" = out_of_date,
-                       "up_to_date" = up_to_date,
-                       "out_of_date_never_done" = merge(out_of_date, never_done, all=TRUE),
-                       "severely_wasted" = severely_wasted,
-                       "wasted" = wasted,
-                       "normal" = normal,
-                       "risk_of_overweight" = risk_of_overweight,
-                       "overweight" = overweight,
-                       "obese" = obese,
-                       "at_risk" = at_risk,
+    registries <- list("data" = data,
                        "outliers" = outliers,
-                       "data" = data)
+                       "up_to_date" = up_to_date,
+                       "out_of_date" = out_of_date,
+                       "never_done" = never_done,
+                       "out_of_date_never_done" = out_of_date_never_done,
+                       "severely_wasted" = sum(severely_wasted),
+                       "wasted" = sum(wasted),
+                       "normal" = sum(normal),
+                       "risk_of_overweight" = sum(risk_of_overweight),
+                       "overweight" = sum(overweight),
+                       "obese" = sum(obese),
+                       "at_risk" = at_risk)
 
     return(registries)
 }
@@ -297,8 +263,8 @@ saveGrowthConcern <- function(output_dir, filename, reg, current_date) {
 
   # Store results in vectors
   bmi_labels = c("Severely Wasted", "Wasted", "Normal", "Risk of Overweight", "Overweight", "Obese");
-  bmi_counts <- c(nrow(reg$severely_wasted), 
-                  nrow(reg$wasted), nrow(reg$normal), nrow(reg$risk_of_overweight), nrow(reg$overweight), nrow(reg$obese));
+  bmi_counts <- c(reg$severely_wasted, 
+                  reg$wasted, reg$normal, reg$risk_of_overweight, reg$overweight, reg$obese);
   bmi_colours = c("dodgerblue3", "orangered3", "darkolivegreen3", "mediumpurple2", "mediumturquoise", "orange", "lightskyblue");
   
   
@@ -311,7 +277,7 @@ saveGrowthConcern <- function(output_dir, filename, reg, current_date) {
   # Plot BMI status
   bp_bmi <- barplot(bmi_counts, 
                     main=paste("Total Peds 2 to 5 years with up to date BMI ",
-                               "(n=",nrow(reg$up_to_date),"/", nrow(reg$data), ") \nas of ",
+                               "(n=",sum(reg$up_to_date),"/", nrow(reg$data), ") \nas of ",
                                format(current_date, "%b %d, %Y"), sep=""), 
                     ylab="Number of patients", 
                     col=bmi_colours,
@@ -378,7 +344,10 @@ saveRegistries <- function(output_dir, current_date, filename, reg) {
     #' Write to a CSV text file otherwise.
     if ("xlsx" %in% rownames(installed.packages())) {
       require(xlsx)
-      writeToExcel(output_dir, filename, reg$out_of_date_never_done, reg$at_risk, reg$outliers)
+      writeToExcel(output_dir, filename, 
+                   reg$data[reg$out_of_date_never_done,], 
+                   reg$data[reg$at_risk,], 
+                   reg$outliers)
     } else {
       
       response = winDialog(type="yesno", 
@@ -390,15 +359,24 @@ saveRegistries <- function(output_dir, current_date, filename, reg) {
         require(xlsx)
         
         if ("xlsx" %in% rownames(installed.packages())) {
-          writeToExcel(output_dir, current_date, filename, reg$out_of_date_never_done, reg$at_risk, reg$outliers)
+          writeToExcel(output_dir, current_date, filename, 
+                       reg$data[reg$out_of_date_never_done,], 
+                       reg$data[reg$at_risk,], 
+                       reg$outliers)
         } else {
           winDialog(type="ok", 
                     "Something went wrong installing excel libraries ('xlsx'). Writing to text files.");
-          writeToCSV(output_dir, current_date, filename, reg$out_of_date_never_done, reg$at_risk, reg$outliers)
+          writeToCSV(output_dir, current_date, filename, 
+                     reg$data[reg$out_of_date_never_done,], 
+                     reg$data[reg$at_risk,], 
+                     reg$outliers)
         }
       }
       else {
-        writeToCSV(output_dir, current_date, filename, reg$out_of_date_never_done, reg$at_risk, reg$outliers)
+        writeToCSV(output_dir, current_date, filename, 
+                   reg$data[reg$out_of_date_never_done,], 
+                   reg$data[reg$at_risk,], 
+                   reg$outliers)
       }
   }
 }
@@ -475,7 +453,6 @@ createMasterTable <- function(output_dir, lastDate, master_data, master_count, m
   for (i in 1:5){
     setCellStyle(cell[[sprintf('1.%d',i)]], csWrap)
   }
-<<<<<<< HEAD
   
   # Save Workbook
   saveWorkbook(outwb, excel_file)
@@ -537,8 +514,7 @@ writeToExcel <- function(output_dir=getwd(), filename, out_of_date_never_done=da
              sheetName="Outliers",
              row.names=FALSE,
              append=TRUE);
-=======
->>>>>>> origin/master
+
 }
 #+
 #' Run Application
