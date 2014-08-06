@@ -537,4 +537,4 @@ writeToExcel <- function(output_dir=getwd(), filename, out_of_date_never_done=da
 }
 #+
 #' Run Application
-runReport()
+suppressWarnings(runReport())
