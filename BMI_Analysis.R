@@ -53,26 +53,10 @@ runReport <- function() {
     print(getwd());
   }
   
+  age_range = getAgeRange()
+  minAge = age_range[1]
+  maxAge = age_range[2]
 
-  #get age ranges from user
-  minAge = as.numeric(winDialogString(message="What is the minimum age?", default="2"))
-  
-  if (minAge < 0) {
-    minAge = 2
-  } else if (minAge > 100) {
-    minAge = 100
-  } else if (is.na(minAge)) {
-    minAge = 2
-  }
-  
-  maxAge = as.numeric(winDialogString(message="What is the maximum age?", default="5"))
-  if (maxAge < 0) {
-    maxAge = 2
-  } else if (maxAge > 100) {
-    maxAge = 100
-  } else if (is.na(maxAge)) {
-    maxAge = 18
-  }
    
   #comparison data between reports
   master_data = c()
@@ -101,6 +85,7 @@ runReport <- function() {
         
     #Read Report File
     data = readReport(current_file)
+    
     
     #Handle for empty data (maybe age range doesn't make sense?)
         
@@ -158,11 +143,41 @@ runReport <- function() {
   winDialog(type="ok",
             sprintf("Finished! You can find the files in %s", output_dir));
 }
-    
+  
+getAgeRange <- function() {
+  #get age ranges from user
+  minAge = as.numeric(winDialogString(message="What is the minimum age?", default="2"))
+  
+  if (minAge < 0) {
+    minAge = 2
+  } else if (minAge > 100) {
+    minAge = 100
+  } else if (is.na(minAge)) {
+    minAge = 2
+  }
+  
+  maxAge = as.numeric(winDialogString(message="What is the maximum age?", default="5"))
+  if (maxAge < 0) {
+    maxAge = 2
+  } else if (maxAge > 100) {
+    maxAge = 100
+  } else if (is.na(maxAge)) {
+    maxAge = 18
+  }
+  
+  return(c(minAge, maxAge));
+}
+
 readReport <- function(input_file) {
     
     #Read in comma-separated text file
     data = read.csv(input_file)
+    
+    if (nrow(data) == 0) {
+      winDialog(type="ok",
+                sprintf("No data found in file %s!", input_file));
+      stop("No data found in file")
+    }
     
     #+
     #' Convert data columns to R dates
@@ -188,6 +203,11 @@ getRegistries <- function(data, minAge, maxAge, current_date) {
     #Subset based on user specified age range
     data = subset(data, data$Calc.Age >= minAge & data$Calc.Age <= maxAge);
   
+    if (nrow(data) == 0) {
+      winDialog(type="ok",
+                sprintf("No data found in age range %d to %d!\nSelect new age range?", minAge, maxAge));
+      stop("No data found in age range")
+    }
     
     one_year_ago = seq(current_date, length=2, by= "-12 months")[2]
     
