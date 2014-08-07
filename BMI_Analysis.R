@@ -34,7 +34,7 @@
 runReport <- function() {
   
   #+
-  # Prompt user for file to read
+  #Prompt user for file to read
   input_files = choose.files();
   
   if (length(input_files) == 0) {
@@ -42,7 +42,7 @@ runReport <- function() {
   }
 
   #+ 
-  # Prompt user for folder to save results to 
+  #Prompt user for folder to save results to 
   output_dir = choose.dir(default=dirname(input_files[[1]]),caption="Select a directory to save files to");
 
   
@@ -58,7 +58,7 @@ runReport <- function() {
   maxAge = age_range[2]
 
    
-  #comparison data between reports
+  #Comparison data between reports
   master_data = c()
   master_count = c()
 
@@ -80,16 +80,15 @@ runReport <- function() {
       }
     }
     
-    # Get filename
+    #Get filename
     filename = basename(sub("\\.txt","",current_file,fixed=FALSE))
         
     #Read Report File
     data = readReport(current_file)
     
-    
     #Handle for empty data (maybe age range doesn't make sense?)
         
-    # Get the current date, and one year ago
+    #Get the current date, and one year ago
     current_date = data$Current.Date[1]
 
     #Get current age in years 
@@ -114,7 +113,7 @@ runReport <- function() {
     bmi_count <- saveGrowthConcern(output_dir, filename, minAge, maxAge, reg, current_date)
     bmi_count <- union(as.numeric(current_date), bmi_count)
     
-    #acummulate number of patients in each weight category
+    #Acummulate number of patients in each weight category
     master_count <- rbind(master_count, bmi_count)
     
     #Save height and weight data comparison chart(s)
@@ -122,7 +121,6 @@ runReport <- function() {
 
     #Print Registries to excel or csv depending on avilable libraries
     saveRegistries(output_dir, current_date, filename, reg)
-    
 
   }
   
@@ -177,6 +175,11 @@ readReport <- function(input_file) {
       winDialog(type="ok",
                 sprintf("No data found in file %s!", input_file));
       stop("No data found in file")
+    }
+    
+    # Delete auto-added "X" column
+    if (!is.null(data$X)) {
+      data <- data[,-(ncol(data))]
     }
     
     #+
