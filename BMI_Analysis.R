@@ -89,7 +89,7 @@ runReport <- function() {
     current_date = data$Current.Date[1]
 
     #Get current age in years 
-    data$Calc.Age <- (current_date - data$Birth.Date)/365.25
+    data$Calc.Age <- as.numeric((current_date - data$Birth.Date)/365.25)
     
     #Create Registries
     reg = getRegistries(data, minAge, maxAge, current_date)
@@ -189,8 +189,8 @@ readReport <- function(input_file) {
     data$Birth.Date = as.Date(data$Birth.Date, format="%b %d, %Y")
         
     # Convert BMI percentile to numberic values
-    data$Latest.BMI.Percentile <- as.numeric(as.character(data$Latest.BMI.Percentile))
-    data$Latest.BMI <- as.numeric(as.character(data$Latest.BMI))
+    data$Latest.BMI.Percentile <- suppressWarnings(as.numeric(as.character(data$Latest.BMI.Percentile)))
+    data$Latest.BMI <- suppressWarnings(as.numeric(as.character(data$Latest.BMI)))
   
     return(data)
 }
@@ -565,4 +565,4 @@ writeToExcel <- function(output_dir=getwd(), filename, out_of_date_never_done=da
 }
 #+
 #' Run Application using this command
-#suppressWarnings(runReport())
+#runReport()
