@@ -85,10 +85,7 @@ runReport <- function() {
         
     #Read Report File
     data = readReport(current_file)
-    
-    
-    #Handle for empty data (maybe age range doesn't make sense?)
-        
+            
     # Get the current date, and one year ago
     current_date = data$Current.Date[1]
 
@@ -200,12 +197,12 @@ getRegistries <- function(data, minAge, maxAge, current_date) {
     #' Create Registries
     #' May not add up to all patients due to outliers and data entry issues.
     
-    #Subset based on user specified age range
-    data = subset(data, data$Calc.Age >= minAge & data$Calc.Age <= maxAge);
+    #Subset based on user specified age range and privacy
+    data = subset(data, data$Calc.Age >= minAge & data$Calc.Age <= maxAge & data$Privacy != "Private Chart");
   
     if (nrow(data) == 0) {
       winDialog(type="ok",
-                sprintf("No data found in age range %d to %d!\nSelect new age range?", minAge, maxAge));
+                sprintf("No data found in age range %d to %d!\nRe-run with new age range?", minAge, maxAge));
       stop("No data found in age range")
     }
     
@@ -222,6 +219,7 @@ getRegistries <- function(data, minAge, maxAge, current_date) {
                       data$Date.of.Latest.Height > current_date |
                       data$Date.of.Latest.Weight > current_date | 
                       data$Date.of.Latest.BMI > current_date)
+    
 
     #Remove outliers from dataset
     data = data[!data$Patient.. %in% outliers$Patient..,]
@@ -539,22 +537,29 @@ writeToCSV <- function(output_dir=getwd(), current_date=Sys.Date(), filename, ou
 #Write registries to excel file (requires R xlsx package)
 writeToExcel <- function(output_dir=getwd(), filename, out_of_date_never_done=data.frame(), at_risk=data.frame(), outliers=data.frame()) {
   excel_file = sprintf("%s/Child_Wellness_Registries_%s.xlsx", output_dir, filename)
-  write.xlsx(out_of_date_never_done,
-             file=excel_file, 
-             sheetName="Out Of Date", 
-             row.names=FALSE);
-  write.xlsx(at_risk, 
-             file=excel_file, 
-             sheetName="At Risk",
-             row.names=FALSE,
-             append=TRUE);
-  write.xlsx(outliers, 
-             file=excel_file, 
-             sheetName="Outliers",
-             row.names=FALSE,
-             append=TRUE);
+  
+  if (nrow(out_of_date_never_done) != 0) {
+    write.xlsx(out_of_date_never_done,
+               file=excel_file, 
+               sheetName="Out Of Date", 
+               row.names=FALSE);
+  }
+  if (nrow(at_risk) != 0) {
+    write.xlsx(at_risk, 
+               file=excel_file, 
+               sheetName="At Risk",
+               row.names=FALSE,
+               append=TRUE);
+  }
+  if (nrow(outliers) != 0) {
+    write.xlsx(outliers, 
+               file=excel_file, 
+               sheetName="Outliers",
+               row.names=FALSE,
+               append=TRUE);
+  }
 
 }
 #+
-#' Run Application
-suppressWarnings(runReport())
+#' Run Application using this command
+#suppressWarnings(runReport())
