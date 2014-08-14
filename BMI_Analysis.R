@@ -25,6 +25,9 @@
 #'  # of patients in each of the above 3 registries
 #'  # of up-to-date patients in each BMI category
 #'  Boxplot for date of last weight and date of last height to see if they are being measured at same time.
+#'  
+#'  Outliers: < 3rd or > 99th percentile
+#'            Increase or decrease by two percentiles between reports (?time between reports)
 
 runReport <- function() {
   
@@ -56,7 +59,8 @@ runReport <- function() {
   #Comparison data between reports
   master_data = c()
   master_count = c()
-
+  percentile_data = data.frame();
+  
   num_files = length(input_files)
   
   if (num_files > 1) {
@@ -89,12 +93,27 @@ runReport <- function() {
     #Create Registries
     reg = getRegistries(data, minAge, maxAge, current_date)
     
-    
-    #If multiple files, store aggregate values in master data
+        #If multiple files, store aggregate values in master data
     if (length(input_files) > 1) {
       total = nrow(reg$data)
       utd = sum(reg$up_to_date)
       master_data = rbind(master_data, c(current_date, total, utd, utd/total, sum(reg$never_done), sum(reg$out_of_date)))
+      
+      if (nrow(percentile_data) == 0) {
+        percentile_data = reg$percentile;
+      } else {
+        outlierPatients = findLargePercentileChanges(percentile_data, reg$percentile)
+        df.temp = data.frame()
+        for (p in outlierPatients) {
+          if (!p %in% reg$outliers$Patient..) {
+            df.temp <- rbind(df.temp, reg$data[reg$data$Patient.. == p,])
+          }
+        }
+        if (nrow(df.temp) > 0) {
+          reg$outliers = rbind(reg$outliers, df.temp);
+        }
+      }
+      
     }
     
     #Print Graphs
@@ -103,10 +122,9 @@ runReport <- function() {
                     current_date)
     
     bmi_count <- saveGrowthConcern(output_dir, filename, minAge, maxAge, reg, current_date)
-    bmi_count <- union(as.numeric(current_date), bmi_count)
     
     #Acummulate number of patients in each weight category
-    master_count <- rbind(master_count, bmi_count)
+    master_count <- suppressWarnings(rbind(master_count, bmi_count))
     
     #Save height and weight data comparison chart(s)
     saveHeightWeightCharts(output_dir, filename, reg$data)
@@ -134,6 +152,24 @@ runReport <- function() {
             sprintf("Finished! You can find the files in %s", output_dir));
 }
   
+findLargePercentileChanges <- function(df1, df2) {
+  
+  #Row names are patient numbers
+  #If both data frames have same patient number, check that they are within one percentile group of each other
+  #or else they are outliers (no patient should change 2 BMI percentiles between reports)
+  outliers = c()
+  for (r in row.names(df1)) {
+    if (!is.na(df2[r,])) {
+      if (abs(df2[r,] - df1[r,]) > 1 & df2[r,] != 0 & df1[r,] != 0) {
+        outliers = rbind(outliers, r)
+      }
+    }  
+  }
+  
+  return(outliers)
+}
+
+
 getAgeRange <- function() {
   #get age ranges from user
   minAge = as.numeric(winDialogString(message="What is the minimum age?", default="2"))
@@ -207,20 +243,22 @@ getRegistries <- function(data, minAge, maxAge, current_date) {
     one_year_ago = seq(current_date, length=2, by= "-12 months")[2]
     
     #' Outliers
-    #' BMI < 11 or BMI > 40
+    #' BMI Percentile < 3 or BMI Percentile > 99
     #' Date of measurement more recent than date of report
-    #' Height < ?
-    #' Weight < ?
-  
+    
     #' Remove outliers from dataframe
-    outliers = subset(data, data$Latest.BMI < 11 | data$Latest.BMI > 40 | 
+    outliers = subset(data, data$Latest.BMI.Percentile < 3 | data$Latest.BMI.Percentile > 99 | 
                       data$Date.of.Latest.Height > current_date |
                       data$Date.of.Latest.Weight > current_date | 
                       data$Date.of.Latest.BMI > current_date)
     
+    #' This is incorrect data which should be removed now
+    incorrect_data = subset(data, data$Date.of.Latest.Height > current_date |
+                               data$Date.of.Latest.Weight > current_date | 
+                               data$Date.of.Latest.BMI > current_date)
 
     #Remove outliers from dataset
-    data = data[!data$Patient.. %in% outliers$Patient..,]
+    data = data[!data$Patient.. %in% incorrect_data$Patient..,]
     
     num_patients = nrow(data)
     
@@ -241,8 +279,8 @@ getRegistries <- function(data, minAge, maxAge, current_date) {
     #+ Get BMI status of up to date patients
     severely_wasted = wasted = normal = risk_of_overweight = overweight = obese = rep(FALSE, num_patients);
 
-    severely_wasted[which(up_to_date & data$Latest.BMI.Percentile<0.1)] = TRUE
-    wasted[which(up_to_date & data$Latest.BMI.Percentile>=0.1 & data$Latest.BMI.Percentile<3)] = TRUE
+    #severely_wasted[which(up_to_date & data$Latest.BMI.Percentile<0.1)] = TRUE
+    wasted[which(up_to_date & data$Latest.BMI.Percentile<3)] = TRUE
     normal[which(up_to_date & data$Latest.BMI.Percentile>=3 & data$Latest.BMI.Percentile<85)] = TRUE
     risk_of_overweight[which(up_to_date & data$Latest.BMI.Percentile>=85 & data$Latest.BMI.Percentile<97)] = TRUE
     overweight[which(up_to_date & data$Latest.BMI.Percentile>=97 & data$Latest.BMI.Percentile<99.9)] = TRUE
@@ -250,13 +288,24 @@ getRegistries <- function(data, minAge, maxAge, current_date) {
     
     at_risk = (up_to_date & !normal)
     
+    percentile = rep(0, num_patients);
+    percentile[wasted] = 1
+    percentile[normal] = 2
+    percentile[risk_of_overweight] = 3
+    percentile[overweight] = 4
+    percentile[obese] = 5
+    
+    percentile_df = data.frame(percentile, row.names=data$Patient..);
+    
+    
     registries <- list("data" = data,
                        "outliers" = outliers,
+                       "percentile" = percentile_df,
                        "up_to_date" = up_to_date,
                        "out_of_date" = out_of_date,
                        "never_done" = never_done,
                        "out_of_date_never_done" = out_of_date_never_done,
-                       "severely_wasted" = sum(severely_wasted),
+                       #"severely_wasted" = sum(severely_wasted),
                        "wasted" = sum(wasted),
                        "normal" = sum(normal),
                        "risk_of_overweight" = sum(risk_of_overweight),
@@ -310,7 +359,7 @@ saveGrowthConcern <- function(output_dir, filename, minAge, maxAge, reg, current
 
   # Store results in vectors
   bmi_labels = c("Severely Wasted", "Wasted", "Normal", "Risk of Overweight", "Overweight", "Obese");
-  bmi_counts <- c(reg$severely_wasted, 
+  bmi_counts <- c(#reg$severely_wasted, 
                   reg$wasted, reg$normal, reg$risk_of_overweight, reg$overweight, reg$obese);
   bmi_colours = c("dodgerblue3", "orangered3", "darkolivegreen3", "mediumpurple2", "mediumturquoise", "orange", "lightskyblue");
   
@@ -348,7 +397,7 @@ saveGrowthConcern <- function(output_dir, filename, minAge, maxAge, reg, current
   text(y=adjusted_count/2, x=bp_bmi, 
        labels=as.character(bmi_counts), xpd=TRUE)
   dev.off();
-  return(bmi_counts)
+  return(c(as.numeric(current_date), bmi_counts))
 }
 
 saveHeightWeightCharts <- function(output_dir, filename, data) {
@@ -428,7 +477,7 @@ createMasterTable <- function(output_dir, lastDate, master_data, master_count, m
   
   # Turn data into a data frame
   df.MD <- data.frame(master_data)
-  df.MC <- data.frame(master_count)
+  df.MC <- suppressWarnings(data.frame(master_count))
   
   # Turn lastDate into a Date
   lastDate <- as.Date(lastDate, origin="1970-01-01")
@@ -441,9 +490,13 @@ createMasterTable <- function(output_dir, lastDate, master_data, master_count, m
                     sprintf("%s w/ out-of-date BMI", age_string))
   df.MD$"Date of Data Capture" <- as.Date(df.MD$"Date of Data Capture", origin="1970-01-01")
   
-  colnames(df.MC) <- c("Date of Data Capture", "Severely Wasted", "Wasted", "Normal", 
+  colnames(df.MC) <- c("Date of Data Capture", #"Severely Wasted", 
+                       "Wasted", "Normal",
                        "Risk of Overweight", "Overweight", "Obese")
   df.MC$"Date of Data Capture" <- as.Date(df.MC$"Date of Data Capture", origin="1970-01-01")
+  
+  numColsMC = length(df.MC);
+  numColsMD = length(df.MD);
   
   # Create workbook and title
   excel_file <- sprintf("%s/Child_Wellness_Master_Table_%s.xlsx", output_dir, lastDate)
@@ -451,7 +504,7 @@ createMasterTable <- function(output_dir, lastDate, master_data, master_count, m
   
   # Create Summary Sheet
   sheet.MD <- createSheet(outwb, sheetName="Summary")
-  setColumnWidth(sheet.MD, 1:6, 15)
+  setColumnWidth(sheet.MD, 1:numColsMD, 15)
   
   csPerc <- CellStyle(outwb, dataFormat=DataFormat("0.00%"))
   csWrap <- CellStyle(outwb, alignment=Alignment(wrapText=T))
@@ -462,37 +515,38 @@ createMasterTable <- function(output_dir, lastDate, master_data, master_count, m
   # Word wrap the header rows
   row <- getRows(sheet.MD, rowIndex=1)
   cell <- getCells(row)
-  for (i in 1:6){
+  for (i in 1:numColsMD){
     setCellStyle(cell[[paste('1.',i, sep="")]], csWrap)
   }
   
   # Create count sheet
   sheet.MC <- createSheet(outwb, sheetName="Count")
-  setColumnWidth(sheet.MC, 1:7, 12)
+  setColumnWidth(sheet.MC, 1:numColsMC, 12)
   csCenter <- CellStyle(outwb, alignment=Alignment(h="ALIGN_CENTER"))
   df.MC.colCenter <- list('2'=csCenter, '3'=csCenter, '4'=csCenter,
                           '5'=csCenter, '6'=csCenter, '7'=csCenter)
   addDataFrame(df.MC, sheet.MC, colStyle=c(df.MC.colCenter), row.names=F)
   row <- getRows(sheet.MC, rowIndex=1)
   cell <- getCells(row)
-  for (c in 1:7){
+  for (c in 1:numColsMC){
     setCellStyle(cell[[sprintf('1.%d', c)]], csWrap)
   }
   
   # Create Percent Change sheet
   sheet.PC <- createSheet(outwb, sheetName="Percent Change")
-  setColumnWidth(sheet.PC, 1:6, 15)
   df.PC.colPerc <- list('2'=csPerc, '3'=csPerc, '4'=csPerc,'5'=csPerc)
   df.PC <- df.MD[,-4]
+  numColsPC = length(df.PC)
+  setColumnWidth(sheet.PC, 1:numColsPC, 15)  
   df.PC.final <- c()
   for (i in 1:(length(df.PC[[1]])-1)) {
-    df.PC.final <- rbind(df.PC.final, cbind(df.PC[[1]][i+1],(df.PC[i+1,2:5]-df.PC[i,2:5])/df.PC[i,2:5]))
+    df.PC.final <- rbind(df.PC.final, cbind(df.PC[[1]][i+1],(df.PC[i+1,2:numColsPC]-df.PC[i,2:numColsPC])/df.PC[i,2:numColsPC]))
   }
   colnames(df.PC.final)[1]<-"Date of Data Capture" 
   addDataFrame(df.PC.final, sheet.PC, colStyle=c(df.PC.colPerc), row.names=F)
   row <- getRows(sheet.PC, rowIndex=1)
   cell <- getCells(row)
-  for (i in 1:5){
+  for (i in 1:numColsPC){
     setCellStyle(cell[[sprintf('1.%d',i)]], csWrap)
   }
   
