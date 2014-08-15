@@ -102,14 +102,24 @@ runReport <- function() {
       if (nrow(percentile_data) == 0) {
         percentile_data = reg$percentile;
       } else {
+        #Get list of patient numbers for patients who moved two or more BMI groups between reports
         outlierPatients = findLargePercentileChanges(percentile_data, reg$percentile)
         df.temp = data.frame()
+        #Look through each outlier patient
         for (p in outlierPatients) {
-          if (!p %in% reg$outliers$Patient..) {
+          #If patient already an outlier then add new reason to other reason(s)
+          if (p %in% reg$outliers$Patient..) {
+            index = (reg$outliers$Patient.. == p)
+            reg$outliers[index,]$Reason <- 
+                sprintf("%s, %s", reg$outliers[index,]$Reason, "Dramatic change in BMI")
+          #If patient not already an outlier, then add them to a temporary registry
+          } else {
             df.temp <- rbind(df.temp, reg$data[reg$data$Patient.. == p,])
           }
         }
+        #If new outlier patients found, add them to the main outlier registry
         if (nrow(df.temp) > 0) {
+          df.temp$Reason <-"Dramatic change in BMI"
           reg$outliers = rbind(reg$outliers, df.temp);
         }
       }
@@ -159,8 +169,11 @@ findLargePercentileChanges <- function(df1, df2) {
   #or else they are outliers (no patient should change 2 BMI percentiles between reports)
   outliers = c()
   for (r in row.names(df1)) {
+    #If patient is in both reports
     if (!is.na(df2[r,])) {
+      #If they have moved more than one BMI group (0 == not measured, so exclude)
       if (abs(df2[r,] - df1[r,]) > 1 & df2[r,] != 0 & df1[r,] != 0) {
+        #Add patient number to outlier list
         outliers = rbind(outliers, r)
       }
     }  
@@ -247,18 +260,21 @@ getRegistries <- function(data, minAge, maxAge, current_date) {
     #' Date of measurement more recent than date of report
     
     #' Remove outliers from dataframe
-    outliers = subset(data, data$Latest.BMI.Percentile < 3 | data$Latest.BMI.Percentile > 99 | 
-                      data$Date.of.Latest.Height > current_date |
-                      data$Date.of.Latest.Weight > current_date | 
-                      data$Date.of.Latest.BMI > current_date)
+    bottom_3rd_percentile = subset(data, data$Latest.BMI.Percentile < 3)
+    bottom_3rd_percentile$Reason <-"Bottom 3rd percentile"
+    
+    top_99th_percentile = subset(data, data$Latest.BMI.Percentile > 99)
+    top_99th_percentile$Reason <- "Top 99th percentile"
     
     #' This is incorrect data which should be removed now
-    incorrect_data = subset(data, data$Date.of.Latest.Height > current_date |
+    incorrect_date = subset(data, data$Date.of.Latest.Height > current_date |
                                data$Date.of.Latest.Weight > current_date | 
                                data$Date.of.Latest.BMI > current_date)
-
+    
+    incorrect_date$Reason <- "Future Date?"
+    
     #Remove outliers from dataset
-    data = data[!data$Patient.. %in% incorrect_data$Patient..,]
+    data = data[!data$Patient.. %in% incorrect_date$Patient..,]
     
     num_patients = nrow(data)
     
@@ -299,7 +315,7 @@ getRegistries <- function(data, minAge, maxAge, current_date) {
     
     
     registries <- list("data" = data,
-                       "outliers" = outliers,
+                       "outliers" = rbind(incorrect_date, bottom_3rd_percentile, top_99th_percentile),
                        "percentile" = percentile_df,
                        "up_to_date" = up_to_date,
                        "out_of_date" = out_of_date,
