@@ -374,10 +374,11 @@ saveStatusGraph <- function(output_dir, filename, minAge, maxAge,
 saveGrowthConcern <- function(output_dir, filename, minAge, maxAge, reg, current_date) {
 
   # Store results in vectors
-  bmi_labels = c("Severely Wasted", "Wasted", "Normal", "Risk of Overweight", "Overweight", "Obese");
+  bmi_labels = c("Wasted", "Normal", "Risk of Overweight", "Overweight", "Obese");
   bmi_counts <- c(#reg$severely_wasted, 
                   reg$wasted, reg$normal, reg$risk_of_overweight, reg$overweight, reg$obese);
-  bmi_colours = c("dodgerblue3", "orangered3", "darkolivegreen3", "mediumpurple2", "mediumturquoise", "orange", "lightskyblue");
+  # "dodgerblue3"
+  bmi_colours = c("orangered3", "darkolivegreen3", "mediumpurple2", "mediumturquoise", "orange", "lightskyblue");
   
   full_filename = sprintf("%s/BMI_Count-%s.png", output_dir, filename);
   png(full_filename);
@@ -630,4 +631,4 @@ writeToExcel <- function(output_dir=getwd(), filename, out_of_date_never_done=da
 }
 #+
 #' Run Application using this command
-#runReport()
+runReport()
