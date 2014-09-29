@@ -185,26 +185,38 @@ findLargePercentileChanges <- function(df1, df2) {
 
 getAgeRange <- function() {
   #get age ranges from user
-  minAge = as.numeric(winDialogString(message="What is the minimum age?", default="2"))
+#   minAge = as.numeric(winDialogString(message="What is the minimum age?", default="2"))
+#   
+#   if (minAge < 0) {
+#    minAge = 2
+#   } else if (minAge > 100) {
+#    minAge = 100
+#   } else if (is.na(minAge)) {
+#    minAge = 2
+#   }
+#   
+#   maxAge = as.numeric(winDialogString(message="What is the maximum age?", default="5"))
+#   if (maxAge < 0) {
+#     maxAge = 2
+#   } else if (maxAge > 100) {
+#     maxAge = 100
+#   } else if (is.na(maxAge)) {
+#     maxAge = 18
+#   }
   
-  if (minAge < 0) {
-    minAge = 2
-  } else if (minAge > 100) {
-    minAge = 100
-  } else if (is.na(minAge)) {
-    minAge = 2
+  age_range = menu(choices=c("2-5", "5-19"), graphics=TRUE, title="Select Age Range");
+  if (age_range ==  0) {
+    stop("No age range selected")
+  }
+    
+  # 1: 2-5 years old    2: 5-19 years old 
+  if (age_range == 1) {
+    minAge = 2; maxAge=5;
+  } else {
+    minAge=5; maxAge=19;
   }
   
-  maxAge = as.numeric(winDialogString(message="What is the maximum age?", default="5"))
-  if (maxAge < 0) {
-    maxAge = 2
-  } else if (maxAge > 100) {
-    maxAge = 100
-  } else if (is.na(maxAge)) {
-    maxAge = 18
-  }
-  
-  return(c(minAge, maxAge));
+  return (c(minAge, maxAge)); 
 }
 
 readReport <- function(input_file) {
@@ -245,7 +257,7 @@ getRegistries <- function(data, minAge, maxAge, current_date) {
     #' May not add up to all patients due to outliers and data entry issues.
     
     #Subset based on user specified age range and privacy
-    data = subset(data, data$Calc.Age >= minAge & data$Calc.Age <= maxAge & data$Privacy != "Private Chart");
+    data = subset(data, data$Calc.Age >= minAge & data$Calc.Age < maxAge); # & data$Privacy != "Private Chart");
   
     if (nrow(data) == 0) {
       winDialog(type="ok",
@@ -271,7 +283,9 @@ getRegistries <- function(data, minAge, maxAge, current_date) {
                                data$Date.of.Latest.Weight > current_date | 
                                data$Date.of.Latest.BMI > current_date)
     
-    incorrect_date$Reason <- "Future Date?"
+    if (nrow(incorrect_date) > 0) {
+      incorrect_date$Reason <- "Future Date?"
+    }
     
     #Remove outliers from dataset
     data = data[!data$Patient.. %in% incorrect_date$Patient..,]
@@ -293,26 +307,39 @@ getRegistries <- function(data, minAge, maxAge, current_date) {
     out_of_date_never_done[which(out_of_date | never_done)] = TRUE
         
     #+ Get BMI status of up to date patients
-    severely_wasted = wasted = normal = risk_of_overweight = overweight = obese = rep(FALSE, num_patients);
+    severely_wasted = wasted = normal = risk_of_overweight = overweight = obese = severely_obese = rep(FALSE, num_patients);
 
     #severely_wasted[which(up_to_date & data$Latest.BMI.Percentile<0.1)] = TRUE
-    wasted[which(up_to_date & data$Latest.BMI.Percentile<3)] = TRUE
-    normal[which(up_to_date & data$Latest.BMI.Percentile>=3 & data$Latest.BMI.Percentile<85)] = TRUE
-    risk_of_overweight[which(up_to_date & data$Latest.BMI.Percentile>=85 & data$Latest.BMI.Percentile<97)] = TRUE
-    overweight[which(up_to_date & data$Latest.BMI.Percentile>=97 & data$Latest.BMI.Percentile<99.9)] = TRUE
-    obese[which(up_to_date & data$Latest.BMI.Percentile>=99.9)] = TRUE
+    
+    wasted[which(up_to_date & data$Latest.BMI.Percentile<=3)] = TRUE
+    normal[which(up_to_date & data$Latest.BMI.Percentile>3 & data$Latest.BMI.Percentile<=85)] = TRUE
+    
+    if (maxAge == 5) {
+      risk_of_overweight[which(up_to_date & data$Latest.BMI.Percentile>85 & data$Latest.BMI.Percentile<=97)] = TRUE
+      overweight[which(up_to_date & data$Latest.BMI.Percentile>97 & data$Latest.BMI.Percentile<=99.9)] = TRUE
+      obese[which(up_to_date & data$Latest.BMI.Percentile>99.9)] = TRUE
+      
+      percentile = rep(0, num_patients);
+      percentile[wasted] = 1
+      percentile[normal] = 2
+      percentile[risk_of_overweight] = 3
+      percentile[overweight] = 4
+      percentile[obese] = 5
+    } else {
+      overweight[which(up_to_date & data$Latest.BMI.Percentile>85 & data$Latest.BMI.Percentile<=97)] = TRUE
+      obese[which(up_to_date & data$Latest.BMI.Percentile>97)] = TRUE
+      severely_obese[which(up_to_date & data$Latest.BMI.Percentile>99.9)] = TRUE
+      
+      percentile = rep(0, num_patients);
+      percentile[wasted] = 1
+      percentile[normal] = 2
+      percentile[overweight] = 3
+      percentile[obese] = 4
+    }
     
     at_risk = (up_to_date & !normal)
     
-    percentile = rep(0, num_patients);
-    percentile[wasted] = 1
-    percentile[normal] = 2
-    percentile[risk_of_overweight] = 3
-    percentile[overweight] = 4
-    percentile[obese] = 5
-    
     percentile_df = data.frame(percentile, row.names=data$Patient..);
-    
     
     registries <- list("data" = data,
                        "outliers" = rbind(incorrect_date, bottom_3rd_percentile, top_99th_percentile),
@@ -327,6 +354,7 @@ getRegistries <- function(data, minAge, maxAge, current_date) {
                        "risk_of_overweight" = sum(risk_of_overweight),
                        "overweight" = sum(overweight),
                        "obese" = sum(obese),
+                       "severely_obese" = sum(severely_obese),
                        "at_risk" = at_risk)
 
     return(registries)
@@ -374,9 +402,16 @@ saveStatusGraph <- function(output_dir, filename, minAge, maxAge,
 saveGrowthConcern <- function(output_dir, filename, minAge, maxAge, reg, current_date) {
 
   # Store results in vectors
-  bmi_labels = c("Wasted", "Normal", "Risk of Overweight", "Overweight", "Obese");
-  bmi_counts <- c(#reg$severely_wasted, 
-                  reg$wasted, reg$normal, reg$risk_of_overweight, reg$overweight, reg$obese);
+  if (maxAge == 5) {
+    bmi_labels = c("Wasted", "Normal", "Risk of Overweight", "Overweight", "Obese");
+    bmi_counts <- c(#reg$severely_wasted, 
+      reg$wasted, reg$normal, reg$risk_of_overweight, reg$overweight, reg$obese);
+  } else {
+    bmi_labels = c("Wasted", "Normal", "Overweight", "Obese", "Severely Obese");
+    bmi_counts <- c(#reg$severely_wasted, 
+      reg$wasted, reg$normal, reg$overweight, reg$obese, reg$severely_obese);
+  }
+  
   # "dodgerblue3"
   bmi_colours = c("orangered3", "darkolivegreen3", "mediumpurple2", "mediumturquoise", "orange", "lightskyblue");
   
@@ -387,7 +422,7 @@ saveGrowthConcern <- function(output_dir, filename, minAge, maxAge, reg, current
   par(mar = c(5,4,6,2) + 0.1);
   # Plot BMI status
   bp_bmi <- barplot(bmi_counts, 
-                    main=sprintf("Total Peds %d to %d years with up to data BMI (n=%d/%d)\nas of %s",
+                    main=sprintf("Total Patients %d to %d years with up to data BMI (n=%d/%d)\nas of %s",
                                  minAge, maxAge, sum(reg$up_to_date), nrow(reg$data), format(current_date, "%b %d, %Y")),
                     ylab="Number of patients", 
                     col=bmi_colours,
@@ -500,16 +535,24 @@ createMasterTable <- function(output_dir, lastDate, master_data, master_count, m
   lastDate <- as.Date(lastDate, origin="1970-01-01")
   
   # Give column names
-  age_string = sprintf("Total Peds %syrs to %syrs", minAge, maxAge)
+  age_string = sprintf("Total Patients %syrs to %syrs", minAge, maxAge)
   colnames(df.MD) <- c("Date of Data Capture", age_string, 
                     sprintf("%s up to date BMI (12 months)", age_string), "Percentage",
                     sprintf("%s w/o BMI (never done)", age_string),
                     sprintf("%s w/ out-of-date BMI", age_string))
   df.MD$"Date of Data Capture" <- as.Date(df.MD$"Date of Data Capture", origin="1970-01-01")
   
-  colnames(df.MC) <- c("Date of Data Capture", #"Severely Wasted", 
-                       "Wasted", "Normal",
-                       "Risk of Overweight", "Overweight", "Obese")
+  if (maxAge == 5) {
+    colnames(df.MC) <- c("Date of Data Capture", #"Severely Wasted", 
+                         "Wasted", "Normal",
+                         "Risk of Overweight", "Overweight", "Obese")
+  } else {
+    colnames(df.MC) <- c("Date of Data Capture", #"Severely Wasted", 
+                         "Wasted", "Normal",
+                          "Overweight", "Obese", "Severely Obese")
+  }
+  
+  
   df.MC$"Date of Data Capture" <- as.Date(df.MC$"Date of Data Capture", origin="1970-01-01")
   
   numColsMC = length(df.MC);

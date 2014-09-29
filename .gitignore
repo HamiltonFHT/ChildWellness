@@ -8,3 +8,8 @@
 .RData
 .Rproj.user
 ChildWellness.Rproj
+*.pper
+*.pper
+.Rproj.user/F053E294/pcs/windowlayoutstate.pper
+.Rproj.user/F053E294/pcs/debug-breakpoints.pper
+.Rproj.user/F053E294/sdb/prop/INDEX
