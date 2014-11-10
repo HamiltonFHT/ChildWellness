@@ -67,6 +67,8 @@ runReport <- function() {
     pb <- winProgressBar(title="Progress...", min=0, max=num_files, width=300)
   }
   
+  doctors_selected = FALSE;
+  
   #Process each file
   for (i in 1:num_files) {
     
@@ -81,19 +83,41 @@ runReport <- function() {
     
     #Get filename
     filename = basename(sub("\\.txt","",current_file,fixed=FALSE))
+    
         
     #Read Report File
     data = readReport(current_file)
     #Get the current date, and one year ago
     current_date = data$Current.Date[1]
 
-    #Get current age in years 
-    data$Calc.Age <- as.numeric((current_date - data$Birth.Date)/365.25)
+    #If Age in years is not already calculated, do it here
+    if ((!"Calc.Age" %in% colnames(data)) && ("Birth.Date" %in% colnames(data))){
+      data$Calc.Age <- as.numeric((current_date - data$Birth.Date)/365.25)
+    }
     
+    if (!doctors_selected) {
+      selected = getDoctors(unique(data$Doctor.Number));
+      
+      if (length(selected) > 1) {
+        numbers = paste(selected, collapse = " ")
+        doctors = sprintf("Doctors %s", numbers);
+      } else if (length(selected) == 1) {
+        doctors = sprintf("Doctor %s", selected);
+      } else {
+        stop("No Doctors Selected!");
+      }
+            
+      doctors_selected = TRUE;
+    }
+    
+    filename = paste(filename, doctors, sep="-");
+    
+    data = subset(data, data$Doctor.Number %in% selected);
+        
     #Create Registries
     reg = getRegistries(data, minAge, maxAge, current_date)
     
-        #If multiple files, store aggregate values in master data
+    #If multiple files, store aggregate values in master data
     if (length(input_files) > 1) {
       total = nrow(reg$data)
       utd = sum(reg$up_to_date)
@@ -126,6 +150,9 @@ runReport <- function() {
       
     }
     
+    # Create Up-to-date over time chart
+
+    
     #Print Graphs
     saveStatusGraph(output_dir, filename, minAge, maxAge,
                     sum(reg$never_done), sum(reg$up_to_date),sum(reg$out_of_date), nrow(reg$data),
@@ -149,7 +176,8 @@ runReport <- function() {
     createMasterTable(output_dir, max(master_data[,1]),
                       master_data[order(master_data[,1]),],
                       master_count[order(master_count[,1]),],
-                      minAge, maxAge);
+                      minAge, maxAge,
+                      doctors);
   }
   
   #Close and delete progress bar
@@ -219,6 +247,22 @@ getAgeRange <- function() {
   return (c(minAge, maxAge)); 
 }
 
+getDoctors <- function(doctors) {
+    
+  selected = select.list(choices=as.character(doctors), 
+                         preselect=as.character(doctors), 
+                         multiple=TRUE, 
+                         graphics=TRUE, 
+                         title="Select Doctor Number(s)");  
+  
+  
+  if (length(selected) == 0) {
+    stop("No Doctors Selected!");
+  }
+  
+  return(selected);
+}
+
 readReport <- function(input_file) {
     
     #Read in comma-separated text file
@@ -242,7 +286,12 @@ readReport <- function(input_file) {
     data$Date.of.Latest.BMI = as.Date(data$Date.of.Latest.BMI, format="%b %d, %Y")
     data$Date.of.Latest.BMI.Percentile = as.Date(data$Date.of.Latest.BMI.Percentile, format="%b %d, %Y")
     data$Current.Date = as.Date(data$Current.Date, format="%b %d, %Y")
-    data$Birth.Date = as.Date(data$Birth.Date, format="%b %d, %Y")
+    if ("Birth.Date" %in% colnames(data)) {
+      data$Birth.Date = as.Date(data$Birth.Date, format="%b %d, %Y")
+    }
+    if ("Age" %in% colnames(data)) {
+      data$Calc.Age = convertAge(data$Age)
+    }
         
     # Convert BMI percentile to numberic values
     data$Latest.BMI.Percentile <- suppressWarnings(as.numeric(as.character(data$Latest.BMI.Percentile)))
@@ -250,6 +299,32 @@ readReport <- function(input_file) {
   
     return(data)
 }
+
+#To convert ages to numbers
+as.numeric.factor <- function(x) {as.numeric(levels(x))[x]}
+
+#Convert age, accounting for "34mo" type ages
+convertAge <- function(PSS_age) {
+  
+  if (is.numeric(PSS_age)) {
+    return(PSS_age);
+  }
+  
+  age_in_years = rep(0, length(PSS_age));
+  
+  for (i in 1:length(PSS_age)) {
+    age = PSS_age[i]
+    if (length(grep("mo", age)) > 0) { 
+      age_in_years[i] = as.numeric(gsub("mo", "", age))/12;
+    } else {
+      age_in_years[i] = as.numeric.factor(age);
+    }
+  }
+  
+  return(age_in_years)
+}
+
+as.numeric.factor <- function(x) {suppressWarnings(as.numeric(levels(x))[x])}
 
 getRegistries <- function(data, minAge, maxAge, current_date) {
     #+
@@ -273,10 +348,14 @@ getRegistries <- function(data, minAge, maxAge, current_date) {
     
     #' Remove outliers from dataframe
     bottom_3rd_percentile = subset(data, data$Latest.BMI.Percentile < 3)
-    bottom_3rd_percentile$Reason <-"Bottom 3rd percentile"
+    if (nrow(bottom_3rd_percentile) > 0) {
+      bottom_3rd_percentile$Reason <-"Bottom 3rd percentile"
+    }
     
     top_99th_percentile = subset(data, data$Latest.BMI.Percentile > 99)
-    top_99th_percentile$Reason <- "Top 99th percentile"
+    if (nrow(top_99th_percentile) > 0) {
+      top_99th_percentile$Reason <- "Top 99th percentile"
+    }
     
     #' This is incorrect data which should be removed now
     incorrect_date = subset(data, data$Date.of.Latest.Height > current_date |
@@ -415,7 +494,7 @@ saveGrowthConcern <- function(output_dir, filename, minAge, maxAge, reg, current
   # "dodgerblue3"
   bmi_colours = c("orangered3", "darkolivegreen3", "mediumpurple2", "mediumturquoise", "orange", "lightskyblue");
   
-  full_filename = sprintf("%s/BMI_Count-%s.png", output_dir, filename);
+  full_filename = sprintf("%s/BMI Count-%s.png", output_dir, filename);
   png(full_filename);
   
   # Make left margin larger for legend text
@@ -525,7 +604,7 @@ saveRegistries <- function(output_dir, current_date, filename, reg) {
 }
 
 
-createMasterTable <- function(output_dir, lastDate, master_data, master_count, minAge, maxAge) {
+createMasterTable <- function(output_dir, lastDate, master_data, master_count, minAge, maxAge, doctors) {
   
   # Turn data into a data frame
   df.MD <- data.frame(master_data)
@@ -559,7 +638,7 @@ createMasterTable <- function(output_dir, lastDate, master_data, master_count, m
   numColsMD = length(df.MD);
   
   # Create workbook and title
-  excel_file <- sprintf("%s/Child_Wellness_Master_Table_%s.xlsx", output_dir, lastDate)
+  excel_file <- sprintf("%s/Child Wellness Master Table %s %s.xlsx", output_dir, lastDate, doctors)
   outwb <- createWorkbook(type="xlsx")
   
   # Create Summary Sheet
@@ -613,8 +692,7 @@ createMasterTable <- function(output_dir, lastDate, master_data, master_count, m
   # Save Workbook
   saveWorkbook(outwb, excel_file)
   
-  # Create Up-to-date over time chart
-  filename <- sprintf("Up-To-Date Over Time Chart (%syrs to %syrs) %s.png", minAge, maxAge, lastDate)
+  filename <- sprintf("Up-To-Date Over Time Chart (%syrs to %syrs) %s %s.png", minAge, maxAge, lastDate, doctors)
   xrange <- range(df.MD$"Date of Data Capture")
   yrange <- range(df.MD$"Percentage")
   png(filename=paste(output_dir,filename,sep="/"), width=700, height=480)
@@ -636,19 +714,19 @@ createMasterTable <- function(output_dir, lastDate, master_data, master_count, m
 #Write registries to three seperate CSV files
 writeToCSV <- function(output_dir=getwd(), current_date=Sys.Date(), filename, out_of_date_never_done=data.frame(), at_risk=data.frame(), outliers=data.frame()) {
   write.csv(out_of_date_never_done,
-            file=sprintf("%s/CW_OutOfDate_%s_%s.txt", output_dir, filename, format(current_date, "%d%b%Y")),
+            file=sprintf("%s/CW-Out Of Date-%s %s.txt", output_dir, filename, format(current_date, "%d%b%Y")),
             row.names=FALSE)
   write.csv(at_risk[order(at_risk$Latest.BMI.Percentile, decrease=TRUE), ],
-            file=sprintf("%s/CW_AtRisk_%s_%s.txt", output_dir, filename, format(current_date, "%d%b%Y")),
+            file=sprintf("%s/CW-At Risk-%s %s.txt", output_dir, filename, format(current_date, "%d%b%Y")),
             row.names=FALSE)
   write.csv(outliers,
-            file=sprintf("%s/CW_Outliers_%s_%s.txt", output_dir, filename, format(current_date, "%d%b%Y")),
+            file=sprintf("%s/CW-Outliers-%s %s.txt", output_dir, filename, format(current_date, "%d%b%Y")),
             row.names=FALSE)
 }
 
 #Write registries to excel file (requires R xlsx package)
 writeToExcel <- function(output_dir=getwd(), filename, out_of_date_never_done=data.frame(), at_risk=data.frame(), outliers=data.frame()) {
-  excel_file = sprintf("%s/Child_Wellness_Registries_%s.xlsx", output_dir, filename)
+  excel_file = sprintf("%s/Child Wellness Registries %s.xlsx", output_dir, filename)
   
   if (nrow(out_of_date_never_done) != 0) {
     write.xlsx(out_of_date_never_done,
