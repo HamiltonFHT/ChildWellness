@@ -29,20 +29,23 @@
 #'  Outliers: < 3rd or > 99th percentile
 #'            Increase or decrease by two percentiles between reports (?time between reports)
 
-runReport <- function() {
+runReport <- function(input_files = NULL, output_dir=NULL, age_range = NULL, selected = NULL) {
   
   #+
   #Prompt user for file to read
-  input_files = choose.files();
-  
+  if(is.null(input_files)) {
+    input_files = choose.files();
+  }
+    
   if (length(input_files) == 0) {
     stop("No file selected");
   }
 
   #+ 
   #Prompt user for folder to save results to 
-  output_dir = choose.dir(default=dirname(input_files[[1]]),caption="Select a directory to save files to");
-
+  if(is.null(output_dir)) {
+    output_dir = choose.dir(default=dirname(input_files[[1]]),caption="Select a directory to save files to");
+  }
   
   #If no output directory selected, using the working directory
   if (is.na(output_dir)) {
@@ -51,10 +54,12 @@ runReport <- function() {
     print(getwd());
   }
   
-  age_range = getAgeRange()
+  if (is.null(age_range)) {
+    age_range = getAgeRange()
+  }
+  
   minAge = age_range[1]
   maxAge = age_range[2]
-
    
   #Comparison data between reports
   master_data = c()
@@ -67,7 +72,12 @@ runReport <- function() {
     pb <- winProgressBar(title="Progress...", min=0, max=num_files, width=300)
   }
   
-  doctors_selected = FALSE;
+  if (is.null(selected)) {
+    doctors_selected = FALSE;
+  } else {
+    doctors_selected = TRUE;
+  }
+  
   
   #Process each file
   for (i in 1:num_files) {
@@ -97,25 +107,21 @@ runReport <- function() {
     
     if (!doctors_selected) {
       selected = getDoctors(unique(data$Doctor.Number));
-      
-      if (length(selected) > 1) {
-        numbers = paste(selected, collapse = " ")
-        doctors = sprintf("Doctors %s", numbers);
-      } else if (length(selected) == 1) {
-        doctors = sprintf("Doctor %s", selected);
-      } else {
-        stop("No Doctors Selected!");
-      }
-            
       doctors_selected = TRUE;
     }
     
+    doctors = formatDoctorString(selected, length(unique(data$Doctor.Number)))
+      
     filename = paste(filename, doctors, sep="-");
     
     data = subset(data, data$Doctor.Number %in% selected);
-        
+    
     #Create Registries
     reg = getRegistries(data, minAge, maxAge, current_date)
+    
+    if (length(reg) == 0) {
+      sprintf("No patients found in %s", filename);
+    }
     
     #If multiple files, store aggregate values in master data
     if (length(input_files) > 1) {
@@ -135,8 +141,8 @@ runReport <- function() {
           if (p %in% reg$outliers$Patient..) {
             index = (reg$outliers$Patient.. == p)
             reg$outliers[index,]$Reason <- 
-                sprintf("%s, %s", reg$outliers[index,]$Reason, "Dramatic change in BMI")
-          #If patient not already an outlier, then add them to a temporary registry
+              sprintf("%s, %s", reg$outliers[index,]$Reason, "Dramatic change in BMI")
+            #If patient not already an outlier, then add them to a temporary registry
           } else {
             df.temp <- rbind(df.temp, reg$data[reg$data$Patient.. == p,])
           }
@@ -148,27 +154,22 @@ runReport <- function() {
         }
       }
       
+      #Print Graphs
+      saveStatusGraph(output_dir, filename, minAge, maxAge,
+                      sum(reg$never_done), sum(reg$up_to_date),sum(reg$out_of_date), nrow(reg$data),
+                      current_date)
+      
+      bmi_count <- saveGrowthConcern(output_dir, filename, minAge, maxAge, reg, current_date)
+      
+      #Acummulate number of patients in each weight category
+      master_count <- suppressWarnings(rbind(master_count, bmi_count))
+      
+      #Save height and weight data comparison chart(s)
+      saveHeightWeightCharts(output_dir, filename, reg$data)
+      
+      #Print Registries to excel or csv depending on avilable libraries
+      saveRegistries(output_dir, current_date, filename, reg)
     }
-    
-    # Create Up-to-date over time chart
-
-    
-    #Print Graphs
-    saveStatusGraph(output_dir, filename, minAge, maxAge,
-                    sum(reg$never_done), sum(reg$up_to_date),sum(reg$out_of_date), nrow(reg$data),
-                    current_date)
-    
-    bmi_count <- saveGrowthConcern(output_dir, filename, minAge, maxAge, reg, current_date)
-    
-    #Acummulate number of patients in each weight category
-    master_count <- suppressWarnings(rbind(master_count, bmi_count))
-    
-    #Save height and weight data comparison chart(s)
-    saveHeightWeightCharts(output_dir, filename, reg$data)
-
-    #Print Registries to excel or csv depending on avilable libraries
-    saveRegistries(output_dir, current_date, filename, reg)
-
   }
   
   #Save comparison data to file if multiple files read in
@@ -189,7 +190,28 @@ runReport <- function() {
   winDialog(type="ok",
             sprintf("Finished! You can find the files in %s", output_dir));
 }
-  
+
+opendir <- function(dir = getwd()){
+  if (.Platform['OS.type'] == "windows"){
+    shell.exec(dir)
+  } else {
+    system(paste(Sys.getenv("R_BROWSER"), dir))
+  }
+}
+
+formatDoctorString <- function(selected, totalDocs) {
+  if (length(selected) == totalDocs) {
+    doctors = "All Doctors";
+  } else if (length(selected) > 1) {
+    numbers = paste(selected, collapse = " ")
+    doctors = sprintf("Doctors %s", numbers);
+  } else if (length(selected) == 1) {
+    doctors = sprintf("Doctor %s", selected);
+  } else {
+    stop("No Doctors Selected!");
+  }
+}
+
 findLargePercentileChanges <- function(df1, df2) {
   
   #Row names are patient numbers
@@ -212,26 +234,8 @@ findLargePercentileChanges <- function(df1, df2) {
 
 
 getAgeRange <- function() {
-  #get age ranges from user
-#   minAge = as.numeric(winDialogString(message="What is the minimum age?", default="2"))
-#   
-#   if (minAge < 0) {
-#    minAge = 2
-#   } else if (minAge > 100) {
-#    minAge = 100
-#   } else if (is.na(minAge)) {
-#    minAge = 2
-#   }
-#   
-#   maxAge = as.numeric(winDialogString(message="What is the maximum age?", default="5"))
-#   if (maxAge < 0) {
-#     maxAge = 2
-#   } else if (maxAge > 100) {
-#     maxAge = 100
-#   } else if (is.na(maxAge)) {
-#     maxAge = 18
-#   }
   
+  #get age ranges from user  
   age_range = menu(choices=c("2-5", "5-19"), graphics=TRUE, title="Select Age Range");
   if (age_range ==  0) {
     stop("No age range selected")
@@ -337,7 +341,8 @@ getRegistries <- function(data, minAge, maxAge, current_date) {
     if (nrow(data) == 0) {
       winDialog(type="ok",
                 sprintf("No data found in age range %d to %d!\nRe-run with new age range?", minAge, maxAge));
-      stop("No data found in age range")
+      print("No data found in age range");
+      return(list());
     }
     
     one_year_ago = seq(current_date, length=2, by= "-12 months")[2]
@@ -532,31 +537,39 @@ saveGrowthConcern <- function(output_dir, filename, minAge, maxAge, reg, current
 }
 
 saveHeightWeightCharts <- function(output_dir, filename, data) {
-  
+
+
   #Plot Date of Latest Height vs Date of Latest Weight
-  full_filename = sprintf("%s/HeightWeightBoxplot-%s.png", output_dir, filename)
+  full_filename = sprintf("%s/HeightWeightScatterplot-%s.png", output_dir, filename)
   png(full_filename);
   
-  boxplot(data$Date.of.Latest.Height, data$Date.of.Latest.Weight, 
+#   library(reshape2)
+#   dates <- data.frame(Height = data$Date.of.Latest.Height, Weight=data$Date.of.Latest.Weight)
+#   melt_dates = melt(dates, value.name="dates")
+#   
+#   ggplot(melt_dates, aes(x=dates, fill=variable)) + 
+#     geom_density(alpha=0.5) + 
+#     scale_fill_manual(values=c("darkolivegreen3", "lightskyblue")) +
+#     xlab("Date") +
+#     ylab ("Frequency") +
+#     ggtitle("Date of Height and Weight Measurements")
+  
+  boxplot(na.omit(data$Date.of.Latest.Height), na.omit(data$Date.of.Latest.Weight), 
           names=c("Height", "Weight"),
           col=c("darkolivegreen3", "lightskyblue"), 
           main="Date of Latest Height and Weight")
   
-  dev.off()
-  
   # Previously used scatter plot
   
-  # HvW_data = data[!data$Patient.. %in% outliers$Patient..,]
-  # png(filename=paste(output_dir, "HeightvsWeight.png", sep="/"));
-  # plot(HvW_data$Date.of.Latest.Weight, HvW_data$Date.of.Latest.Height, 
-  #      xaxt="n", yaxt="n",
-  #      main="Date of Latest Weight vs. Height",
-  #      xlab="Date of Latest Weight", 
-  #      ylab="Date of Latest Height")
-  # axis.Date(side = 2, x=HvW_data$Date.of.Latest.Height, format = "%Y")
-  # axis.Date(side = 1, x=HvW_data$Date.of.Latest.Weight, format = "%Y")
-  # abline(a=0, b=1, col="green")
-  # dev.off()
+#   plot(data$Date.of.Latest.Weight, data$Date.of.Latest.Height, 
+#        xaxt="n", yaxt="n",
+#        main="Date of Latest Weight vs. Height",
+#        xlab="Date of Latest Weight", 
+#        ylab="Date of Latest Height")
+#   axis.Date(side = 2, x=data$Date.of.Latest.Height, format = "%Y")
+#   axis.Date(side = 1, x=data$Date.of.Latest.Weight, format = "%Y")
+#   abline(a=0, b=1, col="green")
+  dev.off()
   
 }
 
@@ -692,6 +705,8 @@ createMasterTable <- function(output_dir, lastDate, master_data, master_count, m
   # Save Workbook
   saveWorkbook(outwb, excel_file)
   
+  
+  #create master graph
   filename <- sprintf("Up-To-Date Over Time Chart (%syrs to %syrs) %s %s.png", minAge, maxAge, lastDate, doctors)
   xrange <- range(df.MD$"Date of Data Capture")
   yrange <- range(df.MD$"Percentage")
@@ -703,8 +718,8 @@ createMasterTable <- function(output_dir, lastDate, master_data, master_count, m
        xlim=c(xrange[1]-15,xrange[2]+15), xaxt="n", font=2)
   text(df.MD$"Date of Data Capture", df.MD$"Percentage", sprintf("%.2f%%", df.MD$"Percentage"*100), pos=1, col="blue")
   lines(df.MD$"Date of Data Capture", df.MD$"Percentage", type="o", col="blue", lwd=1.5)
-  axis(2,at=seq(round(yrange[1],2)-0.01, round(yrange[2],2)+0.01, 0.005),
-       labels=sprintf("%.2f%%", seq(round(yrange[1],2)-0.01, round(yrange[2],2)+0.01, 0.005)*100),
+  axis(2,at=seq(round(yrange[1],2)-0.01, round(yrange[2],2)+0.01, 0.01),
+       labels=sprintf("%.2f%%", seq(round(yrange[1],2)-0.01, round(yrange[2],2)+0.01, 0.01)*100),
        las=2, cex.axis=0.85)
   axis.Date(1, df.MD$"Date of Data Capture", at=seq(xrange[1]-15,xrange[2]+15,by="months"), "%B-%d-%Y")
   
