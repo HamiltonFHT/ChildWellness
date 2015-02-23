@@ -1,4 +1,4 @@
-#' BMI Analysis for custom search from PSS
+#' BMI Analysis for PSS custom search
 #' Copyright (C) 2014  Tom Sitter - Hamilton Family Health Team
 #' 
 #' This program is free software; you can redistribute it and/or modify
@@ -54,8 +54,14 @@ runReport <- function(input_files = NULL, output_dir=NULL, age_range = NULL, sel
     print(getwd());
   }
   
+  print("Input: ")
+  print(input_files)
+  print("Output: ")
+  print(output_dir)
+  
+  
   if (is.null(age_range)) {
-    age_range = getAgeRange()
+    age_range = getAgeRange();
   }
   
   minAge = age_range[1]
@@ -153,24 +159,27 @@ runReport <- function(input_files = NULL, output_dir=NULL, age_range = NULL, sel
           reg$outliers = rbind(reg$outliers, df.temp);
         }
       }
-      
-      #Print Graphs
-      saveStatusGraph(output_dir, filename, minAge, maxAge,
-                      sum(reg$never_done), sum(reg$up_to_date),sum(reg$out_of_date), nrow(reg$data),
-                      current_date)
-      
-      bmi_count <- saveGrowthConcern(output_dir, filename, minAge, maxAge, reg, current_date)
-      
-      #Acummulate number of patients in each weight category
-      master_count <- suppressWarnings(rbind(master_count, bmi_count))
-      
-      #Save height and weight data comparison chart(s)
-      saveHeightWeightCharts(output_dir, filename, reg$data)
-      
-      #Print Registries to excel or csv depending on avilable libraries
-      saveRegistries(output_dir, current_date, filename, reg)
     }
-  }
+      
+    #Print Graphs
+    saveStatusGraph(output_dir, filename, minAge, maxAge,
+                    sum(reg$never_done), sum(reg$up_to_date),sum(reg$out_of_date), nrow(reg$data),
+                    current_date)
+    
+    bmi_count <- saveGrowthConcern(output_dir, filename, minAge, maxAge, reg, current_date)
+    
+    #Acummulate number of patients in each weight category
+    master_count <- suppressWarnings(rbind(master_count, bmi_count))
+    
+    filename_wAge = sprintf("%s Ages %s-%s", filename, minAge, maxAge);
+    
+    #Save height and weight data comparison chart(s)
+    saveHeightWeightCharts(output_dir, filename_wAge, reg$data, current_date)
+    
+    #Print Registries to excel or csv depending on available libraries
+    saveRegistries(output_dir, current_date, filename_wAge, reg)
+    
+  } #end file loop
   
   #Save comparison data to file if multiple files read in
   if (length(input_files) > 1) {
@@ -283,15 +292,30 @@ readReport <- function(input_file) {
       data <- data[,-(ncol(data))]
     }
     
+    
+    if ("Rostered" %in% colnames(data)) {
+      data = subset(data, Rostered == "TRUE")
+    }
+    
+    tempDate = data$Current.Date[1]
+    if (!is.na(as.Date(tempDate, format="%b %d, %Y"))) {
+      dateFormat = "%b %d, %Y"
+    } else if (!is.na(as.Date(tempDate, format="%d-%b-%y"))) {
+      dateFormat = "%d-%b-%y"
+    } else {
+      stop("Unknown date format!")
+    }
+    
     #+
     #' Convert data columns to R dates
-    data$Date.of.Latest.Height = as.Date(data$Date.of.Latest.Height, format="%b %d, %Y")
-    data$Date.of.Latest.Weight = as.Date(data$Date.of.Latest.Weight, format="%b %d, %Y")
-    data$Date.of.Latest.BMI = as.Date(data$Date.of.Latest.BMI, format="%b %d, %Y")
-    data$Date.of.Latest.BMI.Percentile = as.Date(data$Date.of.Latest.BMI.Percentile, format="%b %d, %Y")
-    data$Current.Date = as.Date(data$Current.Date, format="%b %d, %Y")
+    data$Date.of.Latest.Height = as.Date(data$Date.of.Latest.Height, format=dateFormat)
+    data$Date.of.Latest.Weight = as.Date(data$Date.of.Latest.Weight, format=dateFormat)
+    data$Date.of.Latest.BMI = as.Date(data$Date.of.Latest.BMI, format=dateFormat)
+    data$Date.of.Latest.BMI.Percentile = as.Date(data$Date.of.Latest.BMI.Percentile, format=dateFormat)    
+    
+    data$Current.Date = as.Date(data$Current.Date, format=dateFormat)
     if ("Birth.Date" %in% colnames(data)) {
-      data$Birth.Date = as.Date(data$Birth.Date, format="%b %d, %Y")
+      data$Birth.Date = as.Date(data$Birth.Date, format=dateFormat)
     }
     if ("Age" %in% colnames(data)) {
       data$Calc.Age = convertAge(data$Age)
@@ -336,12 +360,11 @@ getRegistries <- function(data, minAge, maxAge, current_date) {
     #' May not add up to all patients due to outliers and data entry issues.
     
     #Subset based on user specified age range and privacy
-    data = subset(data, data$Calc.Age >= minAge & data$Calc.Age < maxAge); # & data$Privacy != "Private Chart");
+    data = subset(data, data$Calc.Age >= minAge & data$Calc.Age < maxAge);
   
     if (nrow(data) == 0) {
       winDialog(type="ok",
-                sprintf("No data found in age range %d to %d!\nRe-run with new age range?", minAge, maxAge));
-      print("No data found in age range");
+                sprintf("No data found in age range %d to %d!", minAge, maxAge));
       return(list());
     }
     
@@ -454,7 +477,7 @@ saveStatusGraph <- function(output_dir, filename, minAge, maxAge,
   status_labels = c("Total", "Up to Date", "Out of Date", "Never Done")
   status_colours = c("mediumpurple2", "darkolivegreen3", "orangered3", "dodgerblue3")
   
-  full_filename = sprintf("%s/BMI_Status-%s.png", output_dir, filename)
+  full_filename = sprintf("%s/BMI Status-%s Ages %d-%d.png", output_dir, filename, minAge, maxAge)
   
   png(full_filename)
   # Make left margin larger for legend text
@@ -499,14 +522,14 @@ saveGrowthConcern <- function(output_dir, filename, minAge, maxAge, reg, current
   # "dodgerblue3"
   bmi_colours = c("orangered3", "darkolivegreen3", "mediumpurple2", "mediumturquoise", "orange", "lightskyblue");
   
-  full_filename = sprintf("%s/BMI Count-%s.png", output_dir, filename);
+  full_filename = sprintf("%s/BMI Count-%s Ages %d-%d.png", output_dir, filename, minAge, maxAge);
   png(full_filename);
   
   # Make left margin larger for legend text
   par(mar = c(5,4,6,2) + 0.1);
   # Plot BMI status
   bp_bmi <- barplot(bmi_counts, 
-                    main=sprintf("Total Patients %d to %d years with up to data BMI (n=%d/%d)\nas of %s",
+                    main=sprintf("Total Patients %d to %d years with up to date BMI (n=%d/%d)\nas of %s",
                                  minAge, maxAge, sum(reg$up_to_date), nrow(reg$data), format(current_date, "%b %d, %Y")),
                     ylab="Number of patients", 
                     col=bmi_colours,
@@ -536,7 +559,7 @@ saveGrowthConcern <- function(output_dir, filename, minAge, maxAge, reg, current
   return(c(as.numeric(current_date), bmi_counts))
 }
 
-saveHeightWeightCharts <- function(output_dir, filename, data) {
+saveHeightWeightCharts <- function(output_dir, filename, data, current_date) {
 
 
   #Plot Date of Latest Height vs Date of Latest Weight
@@ -553,22 +576,21 @@ saveHeightWeightCharts <- function(output_dir, filename, data) {
 #     xlab("Date") +
 #     ylab ("Frequency") +
 #     ggtitle("Date of Height and Weight Measurements")
+  one_year_ago = seq(current_date, length=2, by= "-12 months")[2]
+
+  height_uptodate = data$Date.of.Latest.Height >= one_year_ago
+  weight_uptodate = data$Date.of.Latest.Weight >= one_year_ago
+
+  prcnt_height = sum(height_uptodate, na.rm=TRUE)/length(height_uptodate) * 100
+  prcnt_weight = sum(weight_uptodate, na.rm=TRUE)/length(weight_uptodate) * 100
+
+  print(sprintf("Date: %s, Height up to date: %.1f%%, Weight up to date: %.1f%%", current_date, prcnt_height, prcnt_weight))
   
   boxplot(na.omit(data$Date.of.Latest.Height), na.omit(data$Date.of.Latest.Weight), 
           names=c("Height", "Weight"),
           col=c("darkolivegreen3", "lightskyblue"), 
           main="Date of Latest Height and Weight")
   
-  # Previously used scatter plot
-  
-#   plot(data$Date.of.Latest.Weight, data$Date.of.Latest.Height, 
-#        xaxt="n", yaxt="n",
-#        main="Date of Latest Weight vs. Height",
-#        xlab="Date of Latest Weight", 
-#        ylab="Date of Latest Height")
-#   axis.Date(side = 2, x=data$Date.of.Latest.Height, format = "%Y")
-#   axis.Date(side = 1, x=data$Date.of.Latest.Weight, format = "%Y")
-#   abline(a=0, b=1, col="green")
   dev.off()
   
 }
@@ -651,7 +673,7 @@ createMasterTable <- function(output_dir, lastDate, master_data, master_count, m
   numColsMD = length(df.MD);
   
   # Create workbook and title
-  excel_file <- sprintf("%s/Child Wellness Master Table %s %s.xlsx", output_dir, lastDate, doctors)
+  excel_file <- sprintf("%s/Child Wellness Master Table %s %s Ages %d-%d.xlsx", output_dir, lastDate, doctors, minAge, maxAge)
   outwb <- createWorkbook(type="xlsx")
   
   # Create Summary Sheet
@@ -707,7 +729,7 @@ createMasterTable <- function(output_dir, lastDate, master_data, master_count, m
   
   
   #create master graph
-  filename <- sprintf("Up-To-Date Over Time Chart (%syrs to %syrs) %s %s.png", minAge, maxAge, lastDate, doctors)
+  filename <- sprintf("Up-To-Date Over Time Chart %s %s Ages %s-%s.png", lastDate, doctors, minAge, maxAge)
   xrange <- range(df.MD$"Date of Data Capture")
   yrange <- range(df.MD$"Percentage")
   png(filename=paste(output_dir,filename,sep="/"), width=700, height=480)
